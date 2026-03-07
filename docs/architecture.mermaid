@@ -1,0 +1,29 @@
+graph TD
+    subgraph "Layer 3 — Frontend (React + Three.js)"
+        FE[Dashboard]
+        FE --> GV[GlobeView]
+        FE --> GT[GroundTrack]
+        FE --> BP[BullseyePlot]
+        FE --> FH[FuelHeatmap]
+        FE --> MT[ManeuverTimeline]
+    end
+
+    subgraph "Layer 2 — API (FastAPI + Pydantic)"
+        API[FastAPI App]
+        API --> TEL["POST /api/telemetry"]
+        API --> MAN["POST /api/maneuver/schedule"]
+        API --> SIM["POST /api/simulate/step"]
+        API --> VIS["GET /api/visualization/snapshot"]
+    end
+
+    subgraph "Layer 1 — Physics Engine (Python + NumPy + SciPy)"
+        ENG[SimulationEngine]
+        ENG --> PROP[OrbitalPropagator]
+        ENG --> CONJ[ConjunctionAssessor]
+        ENG --> MNVR[ManeuverPlanner]
+        ENG --> FUEL[FuelTracker]
+        ENG --> GS[GroundStationNetwork]
+    end
+
+    FE -- "HTTP/JSON polling" --> API
+    API -- "Python function calls" --> ENG

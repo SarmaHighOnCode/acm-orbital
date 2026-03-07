@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+__pycache__
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+docs/
+*.md
+!README.md
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+.env
+.env.local

@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  acm:
+    build: .
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./backend:/app/backend
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - LOG_LEVEL=debug
