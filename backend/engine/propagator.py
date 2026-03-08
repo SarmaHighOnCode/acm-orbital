@@ -40,8 +40,8 @@ class OrbitalPropagator:
         # Two-body gravity
         a_gravity = -MU_EARTH * position / r**3
 
-        # J2 perturbation
-        factor = -1.5 * J2 * MU_EARTH * R_EARTH**2 / r**5
+        # J2 perturbation (strictly following problem statement formula)
+        factor = 1.5 * J2 * MU_EARTH * R_EARTH**2 / r**5
         z2_r2 = (z / r) ** 2
         a_j2 = factor * np.array([
             x * (5.0 * z2_r2 - 1.0),

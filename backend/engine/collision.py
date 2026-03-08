@@ -43,29 +43,77 @@ class ConjunctionAssessor:
         debris_states: dict[str, np.ndarray],
         lookahead_s: float = LOOKAHEAD_SECONDS,
     ) -> list[CDM]:
-        """Run the full 4-stage conjunction assessment pipeline.
-
-        Args:
-            sat_states: {sat_id: [x,y,z,vx,vy,vz]} — satellite state vectors
-            debris_states: {deb_id: [x,y,z,vx,vy,vz]} — debris state vectors
-            lookahead_s: Prediction window in seconds (default 24h)
-
-        Returns:
-            List of CDM warnings for conjunctions within threshold
-        """
-        # TODO: Dev 1 — implement the 4-stage filter cascade:
-        #   Stage 1: Altitude band filter (reject altitude difference > 50km)
-        #   Stage 2: KDTree query (build tree from debris, query satellites at 50km)
-        #   Stage 3: TCA refinement (minimize_scalar for each candidate pair)
-        #   Stage 4: CDM emission (classify risk based on miss distance)
+        """Run the full 4-stage conjunction assessment pipeline."""
         warnings: list[CDM] = []
+        
+        if not sat_states or not debris_states:
+            return warnings
+
+        # Stage 1: Altitude band filter (Coarse screening)
+        # Assuming most objects are in LEO, we only care about objects with overlapping altitude ranges
+        sat_radii = {sid: np.linalg.norm(s[:3]) for sid, s in sat_states.items()}
+        
+        # Stage 2: Spatial Indexing (KDTree)
+        # We query for objects within 50km initial radius. This is a heuristic to capture 
+        # anything that COULD collide within 24h given max relative speeds.
+        debris_ids = list(debris_states.keys())
+        debris_positions = np.array([s[:3] for s in debris_states.values()])
+        tree = KDTree(debris_positions)
+
+        for sat_id, sat_state in sat_states.items():
+            r_sat = sat_radii[sat_id]
+            
+            # Find all debris within 50km sphere of current satellite position
+            neighbor_indices = tree.query_ball_point(sat_state[:3], r=50.0)
+            
+            for idx in neighbor_indices:
+                deb_id = debris_ids[idx]
+                deb_state = debris_states[deb_id]
+                
+                # Coarse altitude check (Stage 1 refinement)
+                r_deb = np.linalg.norm(deb_state[:3])
+                if abs(r_sat - r_deb) > 50.0:
+                    continue
+                
+                # Stage 3: TCA Refinement using Brent's method
+                res = minimize_scalar(
+                    self._distance_at_time,
+                    bounds=(0.0, lookahead_s),
+                    args=(sat_state, deb_state),
+                    method='bounded'
+                )
+                
+                tca_s = res.x
+                miss_distance_km = res.fun
+                
+                # Stage 4: CDM Emission
+                if miss_distance_km < 5.0:  # Only report yellow/red/critical
+                    risk = self._classify_risk(miss_distance_km)
+                    warnings.append(CDM(
+                        satellite_id=sat_id,
+                        debris_id=deb_id,
+                        tca=datetime.now() + timedelta(seconds=tca_s),
+                        miss_distance_km=float(miss_distance_km),
+                        risk=risk,
+                        relative_velocity_km_s=float(np.linalg.norm(sat_state[3:] - deb_state[3:]))
+                    ))
+
         logger.info(
-            "Conjunction assessment: %d sats × %d debris, %.0fh lookahead",
-            len(sat_states),
-            len(debris_states),
-            lookahead_s / 3600.0,
+            "Conjunction assessment: %d candidates checked, %d warnings emitted",
+            len(sat_states), len(warnings)
         )
         return warnings
+
+    def _distance_at_time(self, t: float, s1_0: np.ndarray, s2_0: np.ndarray) -> float:
+        """Objective function for minimize_scalar."""
+        # For efficiency, we use linear relative motion approximation for the TCA search
+        # or propagate if t is large. To remain O(N log N), we assume 
+        # relative velocity is constant over small intervals.
+        # However, for 24h, we should ideally propagate. 
+        # As a trade-off, we use the propagator.
+        s1_t = self.propagator.propagate(s1_0, t)
+        s2_t = self.propagator.propagate(s2_0, t)
+        return float(np.linalg.norm(s1_t[:3] - s2_t[:3]))
 
     @staticmethod
     def _classify_risk(miss_distance_km: float) -> str:

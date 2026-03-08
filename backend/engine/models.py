@@ -19,10 +19,14 @@ import numpy as np
 class OrbitalObject:
     """Base class for any tracked orbital object."""
     id: str
-    obj_type: str                          # "SATELLITE" or "DEBRIS"
     position: np.ndarray                   # [x, y, z] km, ECI
     velocity: np.ndarray                   # [vx, vy, vz] km/s, ECI
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    obj_type: str = "UNKNOWN"              # "SATELLITE" or "DEBRIS"
+    timestamp: datetime | None = None      # Handled in __post_init__ if None
+
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.utcnow()
 
     @property
     def state_vector(self) -> np.ndarray:

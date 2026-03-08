@@ -60,28 +60,50 @@ class ManeuverPlanner:
         miss_distance_km: float,
         current_time: datetime,
     ) -> list[dict]:
-        """Calculate evasion + recovery burn pair for a critical conjunction.
+        """Calculate evasion + recovery burn pair for a critical conjunction."""
+        # 1. Timing: Burn at least 30 mins before TCA (if possible) or ASAP
+        # Phasing (T-axis) maneuvers work best with time.
+        burn_lead_time_s = 1800.0  # 30 minutes
+        earliest_burn_time = current_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
+        
+        burn_time = tca - timedelta(seconds=burn_lead_time_s)
+        if burn_time < earliest_burn_time:
+            burn_time = earliest_burn_time
+            
+        # 2. Magnitude: 2 m/s in Transverse direction is usually plenty for LEO
+        # We'll use a positive T burn (speed up) to arrive EARLIER at the intersection.
+        dv_mag_ms = 2.0
+        dv_rtn = np.array([0.0, dv_mag_ms / 1000.0, 0.0])  # km/s
+        
+        # 3. Rotation: Convert to ECI
+        dv_eci = self.rtn_to_eci(satellite.position, satellite.velocity, dv_rtn)
+        
+        # 4. Recovery: Apply opposite burn ~45 mins later (half orbit for LEO is ~46 mins)
+        recovery_time = burn_time + timedelta(seconds=2700.0)
+        dv_rtn_recovery = -dv_rtn
+        
+        # Note: ECI conversion for recovery must use predicted post-burn position
+        # For simplicity in this heuristic, we reuse the current frame rotation
+        # In a high-fidelity system, we would propagate to recovery_time.
+        dv_eci_recovery = self.rtn_to_eci(satellite.position, satellite.velocity, dv_rtn_recovery)
 
-        Args:
-            satellite: Satellite object with position, velocity, fuel
-            debris: Debris object at predicted TCA
-            tca: Time of Closest Approach
-            miss_distance_km: Predicted miss distance at TCA
-            current_time: Current simulation time
-
-        Returns:
-            List of burn command dicts [{burn_id, burnTime, deltaV}, ...]
-
-        TODO: Dev 1 — implement T-axis evasion, validate constraints, plan recovery.
-        """
+        maneuvers = [
+            {
+                "burn_id": f"EVASION_{debris.id}_{burn_time.strftime('%H%M%S')}",
+                "burnTime": burn_time.isoformat(),
+                "deltaV_vector": {"x": dv_eci[0], "y": dv_eci[1], "z": dv_eci[2]}
+            },
+            {
+                "burn_id": f"RECOVERY_{debris.id}_{recovery_time.strftime('%H%M%S')}",
+                "burnTime": recovery_time.isoformat(),
+                "deltaV_vector": {"x": dv_eci_recovery[0], "y": dv_eci_recovery[1], "z": dv_eci_recovery[2]}
+            }
+        ]
+        
         logger.info(
-            "Planning evasion: %s vs %s | TCA: %s | Miss: %.3f km",
-            satellite.id,
-            debris.id,
-            tca.isoformat(),
-            miss_distance_km,
+            "Maneuver scheduled: %s evasion burns for %s", len(maneuvers), satellite.id
         )
-        return []
+        return maneuvers
 
     def validate_burn(
         self,

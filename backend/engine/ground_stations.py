@@ -47,36 +47,54 @@ class GroundStationNetwork:
     def check_line_of_sight(
         self, sat_eci_position: np.ndarray, timestamp: datetime
     ) -> bool:
-        """Check if satellite is visible from ANY ground station.
-
-        Args:
-            sat_eci_position: [x, y, z] in km (ECI J2000)
-            timestamp: Current simulation time (for Earth rotation)
-
-        Returns:
-            True if at least one ground station has LOS
-        """
-        # TODO: Dev 1 — implement elevation angle calculation:
-        #   1. Convert ground station geodetic (lat, lon, alt) to ECEF
-        #   2. Rotate to ECI using GMST at timestamp
-        #   3. Compute elevation angle from station to satellite
-        #   4. Compare against station's min_elev_deg
-        return True  # Stub: assume LOS always available
+        """Check if satellite is visible from ANY ground station."""
+        for gs in self.stations:
+            if self.compute_elevation(sat_eci_position, gs, timestamp) >= gs["min_elev_deg"]:
+                return True
+        return False
 
     @staticmethod
     def compute_elevation(
         sat_eci: np.ndarray, station: dict, timestamp: datetime
     ) -> float:
-        """Compute elevation angle of satellite as seen from ground station.
+        """Compute elevation angle of satellite as seen from ground station."""
+        # 1. Convert Geodetic (lat, lon, alt) to ECEF
+        lat = np.radians(station["lat"])
+        lon = np.radians(station["lon"])
+        alt = station["elev_m"] / 1000.0  # km
+        
+        cos_lat = np.cos(lat)
+        r_gs = (R_EARTH + alt)
+        gs_ecef = r_gs * np.array([
+            cos_lat * np.cos(lon),
+            cos_lat * np.sin(lon),
+            np.sin(lat)
+        ])
 
-        Args:
-            sat_eci: Satellite ECI position [x,y,z] in km
-            station: Ground station dict with lat, lon, elev_m, min_elev_deg
-            timestamp: For Earth rotation (GMST calculation)
+        # 2. Rotate GS ECEF to ECI (Simplification: Lon grows with GMST)
+        # 24h = 86400s. Earth rotates 360 deg in 86400s.
+        # We use the timestamp's total seconds from epoch to find approximate rotation.
+        # This is a hackathon-sufficient approximation of Earth rotation.
+        seconds_from_epoch = (timestamp - datetime(1970, 1, 1)).total_seconds()
+        rotation_angle = (seconds_from_epoch % 86400) * (2 * np.pi / 86400)
+        
+        c, s = np.cos(rotation_angle), np.sin(rotation_angle)
+        rot_matrix = np.array([
+            [c, -s, 0],
+            [s,  c, 0],
+            [0,  0, 1]
+        ])
+        gs_eci = rot_matrix @ gs_ecef
 
-        Returns:
-            Elevation angle in degrees above local horizon
-
-        TODO: Dev 1 — implement ECEF→ECI rotation and elevation formula.
-        """
-        return 90.0  # Stub
+        # 3. Compute range vector and its elevation
+        range_vector = sat_eci - gs_eci
+        range_norm = np.linalg.norm(range_vector)
+        
+        # Local vertical is approximately the unit vector of gs_eci
+        local_vertical = gs_eci / np.linalg.norm(gs_eci)
+        
+        # sin(el) = (range . vertical) / |range|
+        sin_el = np.dot(range_vector, local_vertical) / range_norm
+        elevation_deg = np.degrees(np.arcsin(np.clip(sin_el, -1.0, 1.0)))
+        
+        return float(elevation_deg)
