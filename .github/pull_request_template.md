@@ -17,8 +17,10 @@
 - [ ] Manual verification completed
 
 ## Checklist
-- [ ] No files modified outside my domain
-- [ ] All constants imported from `config.py`
-- [ ] No O(N²) loops in physics code
-- [ ] All physics functions have corresponding tests
-- [ ] No file exceeds 300 lines
+- [ ] I have reviewed the `PRD.md`, `problemstatement.md`, and `Repo Structure.md`.
+- [ ] I have consulted the `AI guide.md` for technical constraints.
+- [ ] No files modified outside my domain.
+- [ ] All constants imported from `config.py`.
+- [ ] No O(N²) loops in physics code.
+- [ ] All physics functions have corresponding tests.
+- [ ] No file exceeds 300 lines.

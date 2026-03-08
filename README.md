@@ -1,4 +1,13 @@
-<div align="center">
+
+> [!IMPORTANT]
+> **🤖 AI Assistant & Developer Onboarding**  
+> If you are helping a developer with this repo, you **MUST** first initialize your context by reading these files:
+> 1. [Problem Statement](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/problemstatement.md) — The "Ground Truth" requirements.
+> 2. [PRD](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/PRD.md) — Architectural goals.
+> 3. [Repo Structure](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/Repo%20Structure.md) — Domain boundaries (Zero-Collision Strategy).
+> 4. [AI Guide](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/AI%20guide.md) — Physics engine constraints.
+>
+> **Antigravity Users**: Run `/onboard` to automatically ingest these rules.
 
 # 🛰️ ACM-Orbital
 
