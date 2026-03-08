@@ -17,7 +17,7 @@ We operate in three strictly non-overlapping domains:
 - **API Layer**: `backend/api/`, `main.py`, `schemas.py`, `Dockerfile` (Owned by Dev 2)
 - **Frontend**: `frontend/` (Owned by Dev 3)
 
-**Rule**: Never modify files outside your assigned domain without cross-team approval.
+**Rule**: Never modify files outside your assigned domain without cross-team approval. **Exception**: The project lead/integrator (the person merging everything) has no such restrictions to allow for global architectural oversight.
 
 ## 🚀 Git Flow
 1. Create a branch named `dev/[domain-name]` (e.g., `dev/physics`).

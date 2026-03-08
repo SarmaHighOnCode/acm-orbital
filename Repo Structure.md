@@ -149,6 +149,9 @@ The three developer branches map to non-overlapping directory subtrees:
 - **Dev 2** exclusively owns `backend/api/`, `main.py`, `Dockerfile`, and all infrastructure files
 - **Dev 3** exclusively owns the entire `frontend/` directory
 
+> [!NOTE]
+> **Maintainers & Mergers**: The team lead or developer responsible for merging PRs and maintaining architectural integrity has **no domain restrictions** and may modify any file to ensure system cohesion.
+
 The only shared files — `config.py` and `schemas.py` — are written on Day 1 and **frozen**. All three developers can push to their branches simultaneously for five consecutive days without a single Git conflict.
 
 ### B. Strict Layered Dependency = No Spaghetti
@@ -179,7 +182,7 @@ Modern AI coding tools perform best when file boundaries match logical boundarie
 
 # 3. Directory-to-Domain Ownership Map
 
-The following table provides the definitive mapping between every directory in the repository and the developer who owns it.
+The following table provides the definitive mapping between every directory in the repository and the developer who owns it. Note that the **Integrator/Maintainer** has full access across all domains.
 
 | Directory / File | Owner | Locked After |
 |---|---|---|
