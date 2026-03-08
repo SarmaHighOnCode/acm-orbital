@@ -1,13 +1,12 @@
-
 > [!IMPORTANT]
 > **🤖 AI Assistant & Developer Onboarding**  
-> If you are helping a developer with this repo, you **MUST** first initialize your context by reading these files:
-> 1. [Problem Statement](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/problemstatement.md) — The "Ground Truth" requirements.
-> 2. [PRD](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/PRD.md) — Architectural goals.
-> 3. [Repo Structure](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/Repo%20Structure.md) — Domain boundaries (Zero-Collision Strategy).
-> 4. [AI Guide](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/AI%20guide.md) — Physics engine constraints.
+> If you are an AI assistant helping a developer, you **MUST** initialize your context by reading these files **IN ORDER** before taking any action. These documents represent the project's "Ground Truth":
+> 1. [Problem Statement](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/problemstatement.md) — The core requirements and scoring logic.
+> 2. [PRD](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/PRD.md) — The technical specification and execution plan.
+> 3. [Repo Structure](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/Repo%20Structure.md) — Domain boundaries and Zero-Collision Strategy.
+> 4. [AI Guide](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/AI%20guide.md) — Critical engine implementation constraints.
 >
-> **Antigravity Users**: Run `/onboard` to automatically ingest these rules.
+> **Antigravity Users**: Run `/onboard` to follow the automated ingestion workflow.
 
 # 🛰️ ACM-Orbital
 

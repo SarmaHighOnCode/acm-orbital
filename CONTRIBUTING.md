@@ -25,7 +25,7 @@ We operate in three strictly non-overlapping domains:
 3. Open a Pull Request and fill out the **PR Template** checklist.
 
 ## 🤖 For AI Agents (Antigravity/GitHub Copilot/etc.)
-If you are an AI assistant helping a developer:
-1. Always read `problemstatement.md` and `PRD.md` first.
-2. Respect the domain boundaries defined in `Repo Structure.md`.
-3. Ensure all physical constants are imported from `backend/config.py`.
+If you are an AI assistant helping a developer, you **MUST** read the core documentation to maintain architectural integrity:
+1.  **Read [problemstatement.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/problemstatement.md) and [PRD.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/PRD.md) first** to understand the "Ground Truth".
+2.  **Respect the domain boundaries** defined in [Repo Structure.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/Repo%20Structure.md).
+3.  **Ensure all physical constants** are imported exclusively from `backend/config.py`.
