@@ -19,7 +19,13 @@ To ensure high-quality, architecturally aligned code, follow these steps to inge
 4. If working on the physics engine, read the implementation constraints:
    - [AI Guide](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/AI%20guide.md)
 
-5. Finally, read the developer guidelines:
+5. Finally, read the developer guidelines and logging requirements:
    - [CONTRIBUTING.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/CONTRIBUTING.md)
+   - [CHANGES.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/CHANGES.md)
+
+6. **Interaction Protocol**:
+   - If requested to modify files outside the current developer's domain (per [Repo Structure.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/Repo%20Structure.md)), you **MUST** issue a warning.
+   - Proceed if the user shows intent to continue (e.g., "y", "yes", "continue", or next instruction).
+   - Log all completed work in [CHANGES.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/CHANGES.md).
 
 After reading these, you are ready to assist with the project.

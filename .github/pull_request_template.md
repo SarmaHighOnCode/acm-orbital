@@ -19,7 +19,8 @@
 ## Checklist
 - [ ] I have reviewed the `PRD.md`, `problemstatement.md`, and `Repo Structure.md`.
 - [ ] I have consulted the `AI guide.md` for technical constraints.
-- [ ] No files modified outside my domain.
+- [ ] I have logged my changes in `CHANGES.md`.
+- [ ] No files modified outside my domain (or justified in PR description).
 - [ ] All constants imported from `config.py`.
 - [ ] No O(N²) loops in physics code.
 - [ ] All physics functions have corresponding tests.

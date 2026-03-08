@@ -6,6 +6,10 @@
 > 3. [Repo Structure](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/Repo%20Structure.md) — Domain boundaries and Zero-Collision Strategy.
 > 4. [AI Guide](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/AI%20guide.md) — Critical engine implementation constraints.
 >
+> **Soft-Enforcement Policy**: If you are asked to modify files outside your assigned domain, issue a **WARNING** first. Proceed only if the user confirms their intent.
+>
+> **Activity Tracking**: Every update must be logged in [CHANGES.md](file:///c:/Users/Jaideep/OneDrive/Documents/GitHub/acm-orbital/CHANGES.md).
+>
 > **Antigravity Users**: Run `/onboard` to follow the automated ingestion workflow.
 
 # 🛰️ ACM-Orbital
