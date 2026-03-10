@@ -88,6 +88,34 @@ class OrbitalPropagator:
         )
         return sol.y[:, -1]
 
+    def propagate_dense(self, state_vector: np.ndarray, dt_seconds: float):
+        """Propagate with dense output for efficient multi-point trajectory sampling.
+
+        Returns an OdeSolution callable sol(t) → state at time t ∈ [0, dt_seconds].
+        Use this instead of repeated propagate() calls when the trajectory must be
+        sampled at many time points (e.g., TCA refinement in minimize_scalar).
+
+        Cost: one DOP853 integration + O(1) polynomial evaluations per sample,
+        vs O(F) full DOP853 integrations when using propagate() inside minimize_scalar.
+
+        Args:
+            state_vector: [x, y, z, vx, vy, vz] in km and km/s
+            dt_seconds: Total propagation span in seconds
+
+        Returns:
+            OdeSolution callable: sol(t) → [x, y, z, vx, vy, vz]
+        """
+        sol = solve_ivp(
+            self._derivatives,
+            [0.0, dt_seconds],
+            state_vector,
+            method="DOP853",
+            rtol=self.rtol,
+            atol=self.atol,
+            dense_output=True,
+        )
+        return sol.sol
+
     def propagate_batch(
         self, states: dict[str, np.ndarray], dt_seconds: float
     ) -> dict[str, np.ndarray]:

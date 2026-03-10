@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import csv
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -75,7 +75,8 @@ class GroundStationNetwork:
         # 24h = 86400s. Earth rotates 360 deg in 86400s.
         # We use the timestamp's total seconds from epoch to find approximate rotation.
         # This is a hackathon-sufficient approximation of Earth rotation.
-        seconds_from_epoch = (timestamp - datetime(1970, 1, 1)).total_seconds()
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc) if timestamp.tzinfo else datetime(1970, 1, 1)
+        seconds_from_epoch = (timestamp - epoch).total_seconds()
         rotation_angle = (seconds_from_epoch % 86400) * (2 * np.pi / 86400)
         
         c, s = np.cos(rotation_angle), np.sin(rotation_angle)

@@ -31,6 +31,15 @@ class ManeuverPlanner:
       3. Normal (N-axis) — LAST RESORT (expensive out-of-plane)
     """
 
+    def __init__(self, propagator=None):
+        """
+        Args:
+            propagator: OrbitalPropagator instance used to predict satellite state
+                        at recovery burn time for correct RTN frame conversion.
+                        If None, falls back to planning-time frame (less accurate).
+        """
+        self.propagator = propagator
+
     @staticmethod
     def rtn_to_eci(
         r_eci: np.ndarray, v_eci: np.ndarray, dv_rtn: np.ndarray
@@ -81,11 +90,20 @@ class ManeuverPlanner:
         # 4. Recovery: Apply opposite burn ~45 mins later (half orbit for LEO is ~46 mins)
         recovery_time = burn_time + timedelta(seconds=2700.0)
         dv_rtn_recovery = -dv_rtn
-        
-        # Note: ECI conversion for recovery must use predicted post-burn position
-        # For simplicity in this heuristic, we reuse the current frame rotation
-        # In a high-fidelity system, we would propagate to recovery_time.
-        dv_eci_recovery = self.rtn_to_eci(satellite.position, satellite.velocity, dv_rtn_recovery)
+
+        # Propagate satellite state to recovery_time to get the correct RTN frame.
+        # Without this, the ECI vector would be computed in the planning-time frame,
+        # but the burn executes ~45 min later when the satellite has rotated ~180°,
+        # so the T-axis direction in ECI would be completely wrong.
+        dt_to_recovery = (recovery_time - current_time).total_seconds()
+        if self.propagator is not None and dt_to_recovery > 0:
+            recovery_sv = self.propagator.propagate(satellite.state_vector, dt_to_recovery)
+            recovery_pos = recovery_sv[:3]
+            recovery_vel = recovery_sv[3:]
+        else:
+            recovery_pos = satellite.position
+            recovery_vel = satellite.velocity
+        dv_eci_recovery = self.rtn_to_eci(recovery_pos, recovery_vel, dv_rtn_recovery)
 
         maneuvers = [
             {
