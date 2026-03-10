@@ -109,8 +109,11 @@ class ConjunctionAssessor:
         if not candidate_pairs:
             return warnings
             
-        # Batch propagate all targeted debris
+        # Batch propagate all targeted debris with looser tolerances for speed
+        orig_rtol, orig_atol = self.propagator.rtol, self.propagator.atol
+        self.propagator.rtol, self.propagator.atol = 1e-4, 1e-6
         deb_ids_list, deb_batch_sol = self.propagator.propagate_dense_batch(deb_targets, lookahead_s)
+        self.propagator.rtol, self.propagator.atol = orig_rtol, orig_atol
         deb_solutions = {
             did: (lambda t, idx=i: deb_batch_sol(t)[idx])
             for i, did in enumerate(deb_ids_list)

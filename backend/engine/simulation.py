@@ -94,7 +94,7 @@ class SimulationEngine:
                         id=obj["id"], position=pos, velocity=vel,
                         timestamp=self.sim_time,
                     )
-                    sat.nominal_slot = pos.copy()
+                    sat.nominal_state = sat.state_vector.copy()
                     self.satellites[obj["id"]] = sat
                     self.fuel_tracker.register_satellite(obj["id"])
                 else:
@@ -241,6 +241,12 @@ class SimulationEngine:
         for sid, new_sv in new_sat_states.items():
             self.satellites[sid].state_vector = new_sv
 
+        # Propagate nominal slots (unperturbed reference orbits)
+        nominal_states = {sid: sat.nominal_state for sid, sat in self.satellites.items()}
+        new_nominal_states = self.propagator.propagate_batch(nominal_states, step_seconds)
+        for sid, new_sv in new_nominal_states.items():
+            self.satellites[sid].nominal_state = new_sv
+
         deb_states = {did: deb.state_vector for did, deb in self.debris.items()}
         new_deb_states = self.propagator.propagate_batch(deb_states, step_seconds)
         for did, new_sv in new_deb_states.items():
@@ -329,7 +335,7 @@ class SimulationEngine:
         for sat in self.satellites.values():
             if sat.status == "EOL":
                 continue  # terminal — never overwrite
-            slot_offset = float(np.linalg.norm(sat.position - sat.nominal_slot))
+            slot_offset = float(np.linalg.norm(sat.position - sat.nominal_state[:3]))
             in_slot = slot_offset <= STATION_KEEPING_RADIUS_KM
             if sat.status == "EVADING":
                 # Transition out of EVADING once all queued burns have fired.

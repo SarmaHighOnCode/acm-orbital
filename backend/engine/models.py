@@ -45,7 +45,7 @@ class Satellite(OrbitalObject):
     obj_type: str = "SATELLITE"
     fuel_kg: float = 50.0                  # Current propellant mass
     dry_mass_kg: float = 500.0             # Empty satellite mass
-    nominal_slot: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    nominal_state: np.ndarray = field(default_factory=lambda: np.zeros(6))
     status: str = "NOMINAL"                # NOMINAL | EVADING | RECOVERING | EOL
     last_burn_time: datetime | None = None # For 600s cooldown enforcement
     maneuver_queue: list = field(default_factory=list)

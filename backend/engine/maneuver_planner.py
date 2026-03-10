@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from config import (
+    CONJUNCTION_THRESHOLD_KM,
     MAX_DV_PER_BURN,
     SIGNAL_LATENCY_S,
     THRUSTER_COOLDOWN_S,
@@ -79,9 +80,9 @@ class ManeuverPlanner:
         if burn_time < earliest_burn_time:
             burn_time = earliest_burn_time
             
-        # 2. Magnitude: 2 m/s in Transverse direction is usually plenty for LEO
+        # 2. Magnitude: Scale proportionally. Direct hit (0m) -> 2m/s. Edge hit -> ~0.02m/s
         # We'll use a positive T burn (speed up) to arrive EARLIER at the intersection.
-        dv_mag_ms = 2.0
+        dv_mag_ms = max(0.001, 2.0 * (CONJUNCTION_THRESHOLD_KM - miss_distance_km) / CONJUNCTION_THRESHOLD_KM)
         dv_rtn = np.array([0.0, dv_mag_ms / 1000.0, 0.0])  # km/s
         
         # 3. Rotation: Convert to ECI

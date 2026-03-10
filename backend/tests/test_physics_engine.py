@@ -762,7 +762,7 @@ class TestCollisionPhysics:
               "v": {"x": 0.0, "y": 7.67, "z": 0.0}}],
         )
         # Nominal slot 1000 km away — satellite can never be within 10 km after 1s
-        engine.satellites["SAT-OOB"].nominal_slot = np.array([6778.0, 1000.0, 0.0])
+        engine.satellites["SAT-OOB"].nominal_state = np.array([6778.0, 1000.0, 0.0, 0.0, 0.0, 0.0])
         engine.step(1)
         status = engine.satellites["SAT-OOB"].status
         assert status in ("RECOVERING", "EVADING", "EOL"), \
@@ -780,7 +780,7 @@ class TestCollisionPhysics:
         sat = engine.satellites["SAT-NOM"]
         # Set nominal slot to current propagated position (computed by engine after tick)
         # Pre-check: offset at T=0 is exactly 0 → within box
-        offset = float(np.linalg.norm(sat.position - sat.nominal_slot))
+        offset = float(np.linalg.norm(sat.position - sat.nominal_state[:3]))
         assert offset == pytest.approx(0.0, abs=0.001) or offset <= STATION_KEEPING_RADIUS_KM
 
 
