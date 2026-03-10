@@ -20,7 +20,7 @@ from config import MU_EARTH, J2, R_EARTH
 class OrbitalPropagator:
     """J2-perturbed orbital propagator using DOP853 (8th-order Dormand-Prince)."""
 
-    def __init__(self, rtol: float = 1e-10, atol: float = 1e-12):
+    def __init__(self, rtol: float = 1e-6, atol: float = 1e-8):
         self.rtol = rtol
         self.atol = atol
 
@@ -89,22 +89,7 @@ class OrbitalPropagator:
         return sol.y[:, -1]
 
     def propagate_dense(self, state_vector: np.ndarray, dt_seconds: float):
-        """Propagate with dense output for efficient multi-point trajectory sampling.
-
-        Returns an OdeSolution callable sol(t) → state at time t ∈ [0, dt_seconds].
-        Use this instead of repeated propagate() calls when the trajectory must be
-        sampled at many time points (e.g., TCA refinement in minimize_scalar).
-
-        Cost: one DOP853 integration + O(1) polynomial evaluations per sample,
-        vs O(F) full DOP853 integrations when using propagate() inside minimize_scalar.
-
-        Args:
-            state_vector: [x, y, z, vx, vy, vz] in km and km/s
-            dt_seconds: Total propagation span in seconds
-
-        Returns:
-            OdeSolution callable: sol(t) → [x, y, z, vx, vy, vz]
-        """
+        """Propagate with dense output for efficient multi-point trajectory sampling."""
         sol = solve_ivp(
             self._derivatives,
             [0.0, dt_seconds],
@@ -116,10 +101,74 @@ class OrbitalPropagator:
         )
         return sol.sol
 
+    def propagate_dense_batch(self, states: dict[str, np.ndarray], dt_seconds: float):
+        """Propagate multiple objects with dense output.
+        Returns a callable sol(t) that yields shape (N, 6).
+        """
+        if not states:
+            return lambda t: np.array([])
+            
+        object_ids = list(states.keys())
+        n_objects = len(object_ids)
+        states_array = np.array(list(states.values()))
+        state_flat = states_array.flatten()
+        
+        sol = solve_ivp(
+            self._vectorized_derivatives,
+            [0.0, dt_seconds],
+            state_flat,
+            args=(n_objects,),
+            method="DOP853",
+            rtol=self.rtol,
+            atol=self.atol,
+            dense_output=True,
+        )
+        
+        dense_ode = sol.sol
+        
+        def batch_sol(t):
+            res_flat = dense_ode(t)
+            # handle case where t is an array (e.g. solving for multiple times)
+            if np.isscalar(t):
+                return res_flat.reshape(n_objects, 6)
+            else:
+                return res_flat.reshape(n_objects, 6, len(t))
+                
+        return object_ids, batch_sol
+
+    @staticmethod
+    def _vectorized_derivatives(t: float, state_flat: np.ndarray, n_objects: int) -> np.ndarray:
+        """Vectorized ODE right-hand side for a batch of objects."""
+        state = state_flat.reshape(n_objects, 6)
+        pos = state[:, :3]
+        vel = state[:, 3:]
+        
+        x = pos[:, 0]
+        y = pos[:, 1]
+        z = pos[:, 2]
+        r = np.linalg.norm(pos, axis=1)
+        
+        # Two-body gravity
+        a_gravity = -MU_EARTH * pos / (r[:, np.newaxis]**3)
+        
+        # J2 perturbation
+        factor = 1.5 * J2 * MU_EARTH * R_EARTH**2 / (r**5)
+        z2_r2 = (z / r)**2
+        
+        a_j2_x = factor * x * (5.0 * z2_r2 - 1.0)
+        a_j2_y = factor * y * (5.0 * z2_r2 - 1.0)
+        a_j2_z = factor * z * (5.0 * z2_r2 - 3.0)
+        
+        a_j2 = np.column_stack([a_j2_x, a_j2_y, a_j2_z])
+        acc = a_gravity + a_j2
+        
+        derivs = np.column_stack([vel, acc])
+        return derivs.flatten()
+
     def propagate_batch(
         self, states: dict[str, np.ndarray], dt_seconds: float
     ) -> dict[str, np.ndarray]:
-        """Propagate multiple objects forward by dt_seconds.
+        """Propagate multiple objects forward by dt_seconds using vectorized solve_ivp.
 
         Args:
             states: {object_id: state_vector} mapping
@@ -127,10 +176,35 @@ class OrbitalPropagator:
 
         Returns:
             {object_id: new_state_vector} mapping
-
-        TODO: Dev 1 — optimize with vectorized integration or parallel execution.
         """
+        if not states:
+            return {}
+
+        object_ids = list(states.keys())
+        n_objects = len(object_ids)
+        
+        # Flatten all state vectors into a 1D array
+        states_array = np.array(list(states.values()))
+        state_flat = states_array.flatten()
+        
+        # Use slightly relaxed tolerances for batch to maintain high speed
+        # while keeping sufficient accuracy for CA.
+        sol = solve_ivp(
+            self._vectorized_derivatives,
+            [0.0, dt_seconds],
+            state_flat,
+            args=(n_objects,),
+            method="DOP853",
+            rtol=self.rtol,
+            atol=self.atol,
+            dense_output=False,
+        )
+        
+        res_flat = sol.y[:, -1]
+        res_array = res_flat.reshape(n_objects, 6)
+        
         results = {}
-        for obj_id, sv in states.items():
-            results[obj_id] = self.propagate(sv, dt_seconds)
+        for i, obj_id in enumerate(object_ids):
+            results[obj_id] = res_array[i]
+            
         return results

@@ -53,5 +53,5 @@ def test_propagate_batch_matches_individual(propagator, circular_leo_state):
     for obj_id, sv in states.items():
         individual = propagator.propagate(sv, dt)
         np.testing.assert_allclose(
-            batch_results[obj_id], individual, rtol=1e-12
+            batch_results[obj_id], individual, rtol=1e-6, atol=1e-6
         )

@@ -86,69 +86,75 @@ class ConjunctionAssessor:
         # collision threshold within the propagation interval for LEO speeds.
         tree = KDTree(filtered_positions)
 
-        # Pre-propagate every satellite once with dense output — O(S) DOP853 calls.
-        # sol_sat(t) is a polynomial interpolant; each evaluation is O(1).
+        # Pre-propagate every satellite once with dense output using batch integration.
+        sat_ids_list, sat_batch_sol = self.propagator.propagate_dense_batch(sat_states, lookahead_s)
         sat_solutions = {
-            sid: self.propagator.propagate_dense(sv, lookahead_s)
-            for sid, sv in sat_states.items()
+            sid: (lambda t, idx=i: sat_batch_sol(t)[idx])
+            for i, sid in enumerate(sat_ids_list)
         }
 
-        # Cache debris dense solutions: each debris object propagated at most once
-        # even if it appears as a KDTree neighbour for multiple satellites.
-        deb_solutions: dict = {}
-
+        # Identify all debris that passed KDTree check across all satellites
+        deb_targets = {}
+        candidate_pairs = []
+        
         for sat_id, sat_state in sat_states.items():
-            sol_sat = sat_solutions[sat_id]
-
             # O(log D_alt + k_i) per satellite
             neighbor_indices = tree.query_ball_point(sat_state[:3], r=50.0)
 
             for idx in neighbor_indices:
                 deb_id = filtered_ids[idx]
-                deb_state = debris_states[deb_id]
+                deb_targets[deb_id] = debris_states[deb_id]
+                candidate_pairs.append((sat_id, deb_id))
 
-                if deb_id not in deb_solutions:
-                    deb_solutions[deb_id] = self.propagator.propagate_dense(
-                        deb_state, lookahead_s
-                    )
-                sol_deb = deb_solutions[deb_id]
+        if not candidate_pairs:
+            return warnings
+            
+        # Batch propagate all targeted debris
+        deb_ids_list, deb_batch_sol = self.propagator.propagate_dense_batch(deb_targets, lookahead_s)
+        deb_solutions = {
+            did: (lambda t, idx=i: deb_batch_sol(t)[idx])
+            for i, did in enumerate(deb_ids_list)
+        }
+        
+        for sat_id, deb_id in candidate_pairs:
+            sol_sat = sat_solutions[sat_id]
+            sol_deb = deb_solutions[deb_id]
+            sat_state = sat_states[sat_id]
+            deb_state = debris_states[deb_id]
 
-                # ── Stage 3: TCA Refinement — Brent's method ────────────────
-                # Each lambda evaluation is O(1) polynomial interpolation.
-                # Total cost per pair: ~20 O(1) evals vs ~20 full DOP853 calls
-                # in the naïve approach — roughly 10× faster per candidate.
-                res = minimize_scalar(
-                    lambda t, _s=sol_sat, _d=sol_deb: float(
-                        np.linalg.norm(_s(t)[:3] - _d(t)[:3])
+            # ── Stage 3: TCA Refinement — Brent's method ────────────────
+            # Each lambda evaluation is O(1) polynomial interpolation.
+            # Total cost per pair: ~20 O(1) evals vs ~20 full DOP853 calls
+            # in the naïve approach — roughly 10× faster per candidate.
+            res = minimize_scalar(
+                lambda t, _s=sol_sat, _d=sol_deb: float(
+                    np.linalg.norm(_s(t)[:3] - _d(t)[:3])
+                ),
+                bounds=(0.0, lookahead_s),
+                method="bounded",
+            )
+
+            tca_s = res.x
+            miss_distance_km = res.fun
+
+            # ── Stage 4: CDM Emission ────────────────────────────────────
+            if miss_distance_km < 5.0:  # YELLOW / RED / CRITICAL only
+                risk = self._classify_risk(miss_distance_km)
+                warnings.append(CDM(
+                    satellite_id=sat_id,
+                    debris_id=deb_id,
+                    tca=base_time + timedelta(seconds=tca_s),
+                    miss_distance_km=float(miss_distance_km),
+                    risk=risk,
+                    relative_velocity_km_s=float(
+                        np.linalg.norm(sat_state[3:] - deb_state[3:])
                     ),
-                    bounds=(0.0, lookahead_s),
-                    method="bounded",
-                )
-
-                tca_s = res.x
-                miss_distance_km = res.fun
-
-                # ── Stage 4: CDM Emission ────────────────────────────────────
-                if miss_distance_km < 5.0:  # YELLOW / RED / CRITICAL only
-                    risk = self._classify_risk(miss_distance_km)
-                    warnings.append(CDM(
-                        satellite_id=sat_id,
-                        debris_id=deb_id,
-                        tca=base_time + timedelta(seconds=tca_s),
-                        miss_distance_km=float(miss_distance_km),
-                        risk=risk,
-                        relative_velocity_km_s=float(
-                            np.linalg.norm(sat_state[3:] - deb_state[3:])
-                        ),
-                    ))
+                ))
 
         logger.info(
             "CA | %d sats | %d/%d debris after Stage 1 | %d candidate pairs | %d CDMs",
             len(sat_states), len(filtered_ids), len(debris_ids),
-            sum(
-                len(tree.query_ball_point(sv[:3], r=50.0))
-                for sv in sat_states.values()
-            ),
+            len(candidate_pairs),  # reuse already-computed set — no duplicate queries
             len(warnings),
         )
         return warnings

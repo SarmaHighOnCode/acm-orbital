@@ -1,0 +1,122 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\Jaideep\AppData\Local\Programs\Python\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital
+plugins: anyio-4.12.0
+collecting ... collected 76 items
+
+backend/tests/test_physics_engine.py::TestJ2AccelerationFormula::test_equatorial_j2_x_exact PASSED [  1%]
+backend/tests/test_physics_engine.py::TestJ2AccelerationFormula::test_equatorial_j2_is_inward PASSED [  2%]
+backend/tests/test_physics_engine.py::TestJ2AccelerationFormula::test_equatorial_y_axis_symmetric PASSED [  3%]
+backend/tests/test_physics_engine.py::TestJ2AccelerationFormula::test_polar_j2_z_exact PASSED [  5%]
+backend/tests/test_physics_engine.py::TestJ2AccelerationFormula::test_polar_j2_is_outward PASSED [  6%]
+backend/tests/test_physics_engine.py::TestJ2AccelerationFormula::test_j2_is_roughly_1000x_smaller_than_gravity PASSED [  7%]
+backend/tests/test_physics_engine.py::TestJ2AccelerationFormula::test_j2_acceleration_no_nan_no_inf PASSED [  9%]
+backend/tests/test_physics_engine.py::TestPropagationAccuracy::test_energy_conserved_24h PASSED [ 10%]
+backend/tests/test_physics_engine.py::TestPropagationAccuracy::test_semi_major_axis_conserved_24h PASSED [ 11%]
+backend/tests/test_physics_engine.py::TestPropagationAccuracy::test_propagation_no_nan_no_inf_24h PASSED [ 13%]
+backend/tests/test_physics_engine.py::TestPropagationAccuracy::test_raan_regression_matches_analytics_24h PASSED [ 14%]
+backend/tests/test_physics_engine.py::TestPropagationAccuracy::test_time_reversibility_1h PASSED [ 15%]
+backend/tests/test_physics_engine.py::TestPropagationAccuracy::test_batch_matches_individual_10_orbits PASSED [ 17%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_basis_vectors_orthonormal PASSED [ 18%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_rotation_matrix_is_orthogonal PASSED [ 19%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_equatorial_rtn_equals_eci_identity PASSED [ 21%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_t_burn_equatorial_is_pure_y PASSED [ 22%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_r_burn_equatorial_is_pure_x PASSED [ 23%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_n_burn_equatorial_is_pure_z PASSED [ 25%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_magnitude_preserved PASSED [ 26%]
+backend/tests/test_physics_engine.py::TestRTNtoECI::test_inclined_t_burn_closed_form PASSED [ 27%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_known_answer_2ms PASSED [ 28%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_known_answer_10ms PASSED [ 30%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_known_answer_15ms_max_burn PASSED [ 31%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_uses_wet_mass_not_dry_mass PASSED [ 32%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_mass_coupling_sequential_burns PASSED [ 34%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_three_sequential_burns_exact_cumulative PASSED [ 35%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_fuel_never_below_zero PASSED [ 36%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_eol_at_exactly_threshold PASSED [ 38%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_sufficient_fuel_logic PASSED [ 39%]
+backend/tests/test_physics_engine.py::TestTsiolkovsky::test_get_current_mass_tracks_consumption PASSED [ 40%]
+backend/tests/test_physics_engine.py::TestConstraints::test_dv_above_15ms_rejected PASSED [ 42%]
+backend/tests/test_physics_engine.py::TestConstraints::test_dv_at_exactly_15ms_accepted PASSED [ 43%]
+backend/tests/test_physics_engine.py::TestConstraints::test_dv_at_zero_accepted PASSED [ 44%]
+backend/tests/test_physics_engine.py::TestConstraints::test_burn_at_9s_rejected PASSED [ 46%]
+backend/tests/test_physics_engine.py::TestConstraints::test_burn_at_exactly_10s_accepted PASSED [ 47%]
+backend/tests/test_physics_engine.py::TestConstraints::test_burn_at_0s_rejected PASSED [ 48%]
+backend/tests/test_physics_engine.py::TestConstraints::test_cooldown_within_599s_rejected PASSED [ 50%]
+backend/tests/test_physics_engine.py::TestConstraints::test_cooldown_at_exactly_600s_accepted PASSED [ 51%]
+backend/tests/test_physics_engine.py::TestConstraints::test_no_previous_burn_skips_cooldown PASSED [ 52%]
+backend/tests/test_physics_engine.py::TestConstraints::test_no_los_rejected PASSED [ 53%]
+backend/tests/test_physics_engine.py::TestConstraints::test_all_good_accepted PASSED [ 55%]
+backend/tests/test_physics_engine.py::TestConstraints::test_engine_rejects_16ms_burn PASSED [ 56%]
+backend/tests/test_physics_engine.py::TestConstraints::test_engine_rejects_unknown_satellite PASSED [ 57%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_classify_critical_below_100m PASSED [ 59%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_classify_boundary_exactly_100m_not_critical PASSED [ 60%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_classify_red_below_1km PASSED [ 61%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_classify_yellow_below_5km PASSED [ 63%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_classify_green_above_5km PASSED [ 64%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_zero_meter_collision_emits_critical PASSED [ 65%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_99m_is_critical PASSED [ 67%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_101m_is_not_critical PASSED [ 68%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_empty_sat_returns_empty PASSED [ 69%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_empty_deb_returns_empty PASSED [ 71%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_both_empty_returns_empty PASSED [ 72%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_cdm_tca_is_after_base_time PASSED [ 73%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_zero_offset_is_inside_box PASSED [ 75%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_exactly_10km_is_inside_box PASSED [ 76%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_11km_is_outside_box PASSED [ 77%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_recovering_status_when_outside_slot PASSED [ 78%]
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_nominal_status_when_near_slot PASSED [ 80%]
+backend/tests/test_physics_engine.py::TestSpatialIndexPerformance::test_kdtree_100k_build_under_3s PASSED [ 81%]
+backend/tests/test_physics_engine.py::TestSpatialIndexPerformance::test_50_queries_into_100k_under_1s PASSED [ 82%]
+backend/tests/test_physics_engine.py::TestSpatialIndexPerformance::test_kdtree_correctness_matches_naive PASSED [ 84%]
+backend/tests/test_physics_engine.py::TestSpatialIndexPerformance::test_kdtree_dominates_naive_at_100k PASSED [ 85%]
+backend/tests/test_physics_engine.py::TestSpatialIndexPerformance::test_conjunction_assessor_50sats_10k_debris_under_60s PASSED [ 86%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_step_response_schema PASSED [ 88%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_ingest_telemetry_response_schema PASSED [ 89%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_schedule_maneuver_rejected_schema PASSED [ 90%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_clock_advances_exactly PASSED [ 92%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_satellite_positions_change_after_tick PASSED [ 93%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_maneuver_changes_velocity PASSED [ 94%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_maneuver_depletes_fuel PASSED [ 96%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_eol_triggered_by_critical_fuel PASSED [ 97%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_snapshot_structure PASSED [ 98%]
+backend/tests/test_physics_engine.py::TestTickLoop::test_multiple_steps_stable PASSED [100%]
+
+============================== warnings summary ===============================
+backend/tests/test_physics_engine.py: 14 warnings
+  C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital\backend\engine\simulation.py:65: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    self.sim_time: datetime = datetime.utcnow()
+
+backend/tests/test_physics_engine.py::TestConstraints::test_engine_rejects_16ms_burn
+  C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital\backend\tests\test_physics_engine.py:622: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    datetime.utcnow().isoformat() + "Z",
+
+backend/tests/test_physics_engine.py::TestConstraints::test_engine_rejects_16ms_burn
+  C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital\backend\tests\test_physics_engine.py:627: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    future = (datetime.utcnow() + timedelta(seconds=120)).strftime(
+
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_recovering_status_when_outside_slot
+  C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital\backend\tests\test_physics_engine.py:759: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    datetime.utcnow().isoformat() + "Z",
+
+backend/tests/test_physics_engine.py::TestCollisionPhysics::test_nominal_status_when_near_slot
+  C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital\backend\tests\test_physics_engine.py:775: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    datetime.utcnow().isoformat() + "Z",
+
+backend/tests/test_physics_engine.py::TestTickLoop::test_step_response_schema
+backend/tests/test_physics_engine.py::TestTickLoop::test_clock_advances_exactly
+backend/tests/test_physics_engine.py::TestTickLoop::test_satellite_positions_change_after_tick
+backend/tests/test_physics_engine.py::TestTickLoop::test_maneuver_changes_velocity
+backend/tests/test_physics_engine.py::TestTickLoop::test_maneuver_depletes_fuel
+backend/tests/test_physics_engine.py::TestTickLoop::test_eol_triggered_by_critical_fuel
+backend/tests/test_physics_engine.py::TestTickLoop::test_snapshot_structure
+backend/tests/test_physics_engine.py::TestTickLoop::test_multiple_steps_stable
+  C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital\backend\tests\test_physics_engine.py:966: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    engine.ingest_telemetry(datetime.utcnow().isoformat() + "Z", objects)
+
+backend/tests/test_physics_engine.py::TestTickLoop::test_ingest_telemetry_response_schema
+  C:\Users\Jaideep\OneDrive\Documents\GitHub\acm-orbital\backend\tests\test_physics_engine.py:984: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    datetime.utcnow().isoformat() + "Z",
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 76 passed, 27 warnings in 0.60s =======================

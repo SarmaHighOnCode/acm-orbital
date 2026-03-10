@@ -23,6 +23,7 @@ import logging
 from datetime import datetime, timedelta
 
 import numpy as np
+from scipy.spatial import KDTree as _KDTree
 
 from config import (
     CONJUNCTION_THRESHOLD_KM,
@@ -235,15 +236,15 @@ class SimulationEngine:
         maneuvers_executed = 0
 
         # ── Step 1: Propagate all objects ────────────────────────────────
-        for sat in self.satellites.values():
-            sat.state_vector = self.propagator.propagate(
-                sat.state_vector, step_seconds
-            )
+        sat_states = {sid: sat.state_vector for sid, sat in self.satellites.items()}
+        new_sat_states = self.propagator.propagate_batch(sat_states, step_seconds)
+        for sid, new_sv in new_sat_states.items():
+            self.satellites[sid].state_vector = new_sv
 
-        for deb in self.debris.values():
-            deb.state_vector = self.propagator.propagate(
-                deb.state_vector, step_seconds
-            )
+        deb_states = {did: deb.state_vector for did, deb in self.debris.items()}
+        new_deb_states = self.propagator.propagate_batch(deb_states, step_seconds)
+        for did, new_sv in new_deb_states.items():
+            self.debris[did].state_vector = new_sv
 
         # ── Step 2: Execute scheduled maneuvers ─────────────────────────
         for sat_id, sat in self.satellites.items():
@@ -298,22 +299,31 @@ class SimulationEngine:
             current_time=target_time,
         )
 
-        # Check for actual collisions at current positions
-        for sat in self.satellites.values():
-            for deb in self.debris.values():
-                dist = float(np.linalg.norm(sat.position - deb.position))
-                if dist < CONJUNCTION_THRESHOLD_KM:
-                    collisions_detected += 1
-                    logger.critical(
-                        "COLLISION | %s × %s | Time:%s | Distance:%.4f km",
-                        sat.id, deb.id, target_time.isoformat(), dist,
-                    )
-                    self.collision_log.append({
-                        "satellite_id": sat.id,
-                        "debris_id": deb.id,
-                        "time": target_time.isoformat(),
-                        "distance_km": dist,
-                    })
+        # Check for actual collisions at current positions — O(S log D) via KDTree,
+        # NOT O(S×D) Python loops.  With 50 sats × 10K debris the naive approach
+        # runs 500,000 Python iterations; KDTree queries are ~100× faster.
+        if self.satellites and self.debris:
+            _deb_ids  = list(self.debris.keys())
+            _deb_pos  = np.array([d.position for d in self.debris.values()])
+            _deb_tree = _KDTree(_deb_pos)
+            for sat in self.satellites.values():
+                for idx in _deb_tree.query_ball_point(
+                    sat.position, r=CONJUNCTION_THRESHOLD_KM
+                ):
+                    deb  = self.debris[_deb_ids[idx]]
+                    dist = float(np.linalg.norm(sat.position - deb.position))
+                    if dist < CONJUNCTION_THRESHOLD_KM:
+                        collisions_detected += 1
+                        logger.critical(
+                            "COLLISION | %s × %s | Time:%s | Distance:%.4f km",
+                            sat.id, deb.id, target_time.isoformat(), dist,
+                        )
+                        self.collision_log.append({
+                            "satellite_id": sat.id,
+                            "debris_id": deb.id,
+                            "time": target_time.isoformat(),
+                            "distance_km": dist,
+                        })
 
         # ── Step 4: Station-keeping status ───────────────────────────────
         for sat in self.satellites.values():
