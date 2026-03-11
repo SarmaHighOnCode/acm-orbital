@@ -31,6 +31,9 @@ from config import (
     STATION_KEEPING_RADIUS_KM,
     SIGNAL_LATENCY_S,
     THRUSTER_COOLDOWN_S,
+    ISP,
+    G0,
+    M_DRY,
 )
 from engine.models import Satellite, Debris, CDM
 from engine.propagator import OrbitalPropagator
@@ -175,6 +178,7 @@ class SimulationEngine:
             }
 
         sat = self.satellites[satellite_id]
+        simulated_fuel = self.fuel_tracker.get_fuel(satellite_id)
 
         # Seed effective_last_burn from executed history AND already-queued future
         # burns so that cooldown is enforced end-to-end across submitted sequences.
@@ -196,7 +200,13 @@ class SimulationEngine:
                 burn["burnTime"].replace("Z", "+00:00")
             )
 
-            has_los = self.gs_network.check_line_of_sight(sat.position, burn_time)
+            dt_to_burn = (burn_time - self.sim_time).total_seconds()
+            if dt_to_burn > 0:
+                burn_pos = self.propagator.propagate(sat.state_vector, dt_to_burn)[:3]
+            else:
+                burn_pos = sat.position
+
+            has_los = self.gs_network.check_line_of_sight(burn_pos, burn_time)
 
             is_valid, reason = self.planner.validate_burn(
                 delta_v_magnitude_ms=dv_magnitude_ms,
@@ -210,29 +220,33 @@ class SimulationEngine:
                 logger.warning("MANEUVER | %s | REJECTED | %s", satellite_id, reason)
                 return {
                     "status": "REJECTED",
+                    "reason": reason,
                     "validation": {
                         "ground_station_los": has_los,
                         "sufficient_fuel": self.fuel_tracker.sufficient_fuel(
                             satellite_id, dv_magnitude_ms
                         ),
-                        "projected_mass_remaining_kg": float(
-                            self.fuel_tracker.get_current_mass(satellite_id)
-                        ),
+                        "projected_mass_remaining_kg": float(M_DRY + simulated_fuel),
                     },
                 }
 
-            if not self.fuel_tracker.sufficient_fuel(satellite_id, dv_magnitude_ms):
+            current_mass = M_DRY + simulated_fuel
+            exponent = -abs(dv_magnitude_ms) / (ISP * G0)
+            fuel_needed = current_mass * (1.0 - np.exp(exponent))
+
+            if simulated_fuel < fuel_needed:
                 logger.warning("MANEUVER | %s | REJECTED | Insufficient fuel", satellite_id)
                 return {
                     "status": "REJECTED",
+                    "reason": "Insufficient fuel",
                     "validation": {
                         "ground_station_los": has_los,
                         "sufficient_fuel": False,
-                        "projected_mass_remaining_kg": float(
-                            self.fuel_tracker.get_current_mass(satellite_id)
-                        ),
+                        "projected_mass_remaining_kg": float(current_mass),
                     },
                 }
+
+            simulated_fuel -= fuel_needed
 
             # Advance the sequence-local last-burn pointer for the next iteration
             effective_last_burn = burn_time
@@ -245,9 +259,7 @@ class SimulationEngine:
             "validation": {
                 "ground_station_los": True,
                 "sufficient_fuel": True,
-                "projected_mass_remaining_kg": float(
-                    self.fuel_tracker.get_current_mass(satellite_id)
-                ),
+                "projected_mass_remaining_kg": float(M_DRY + simulated_fuel),
             },
         }
 
@@ -410,12 +422,34 @@ class SimulationEngine:
 
             # LOS blackout guard: reschedule out-of-contact burns to just before
             # the blackout window ends (signal_latency + 60 s safety margin).
-            for burn in burns:
-                bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
-                if not self.gs_network.check_line_of_sight(sat.position, bt):
-                    burn["burnTime"] = (
-                        target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
-                    ).isoformat()
+            if burns:
+                max_dt = 0.0
+                for burn in burns:
+                    bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
+                    dt = (bt - target_time).total_seconds()
+                    if dt > max_dt: max_dt = dt
+                
+                if max_dt > 0:
+                    dense_sol = self.propagator.propagate_dense(sat.state_vector, max_dt)
+                else:
+                    dense_sol = lambda t: sat.state_vector
+
+                for burn in burns:
+                    bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
+                    def has_los_at(t_check: datetime) -> bool:
+                        dt_check = (t_check - target_time).total_seconds()
+                        pos = dense_sol(dt_check)[:3] if dt_check > 0 else sat.position
+                        return self.gs_network.check_line_of_sight(pos, t_check)
+
+                    if not has_los_at(bt):
+                        earliest = target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
+                        test_bt = bt
+                        while test_bt >= earliest:
+                            if has_los_at(test_bt):
+                                burn["burnTime"] = test_bt.isoformat()
+                                bt = test_bt
+                                break
+                            test_bt -= timedelta(seconds=60)
 
             # Cooldown enforcement: auto-planned burns must respect the same
             # 600 s thruster cooldown as manually-scheduled burns.  Compute the

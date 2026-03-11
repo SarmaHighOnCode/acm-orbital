@@ -577,8 +577,8 @@ class TestConstraints:
         assert not valid
         assert "600" in reason or "cooldown" in reason.lower()
 
-    def test_cooldown_at_exactly_600s_accepted(self):
-        """Last burn at T0, new burn at T0 + exactly 600s → accepted."""
+    def test_cooldown_at_exactly_600s_rejected(self):
+        """Last burn at T0, new burn at T0 + exactly 600s → rejected (exclusive)."""
         last = self.now - timedelta(seconds=570)     # 570s ago
         burn_time = last + timedelta(seconds=600)    # exactly 600s after last
         valid, _ = self.planner.validate_burn(
@@ -588,7 +588,7 @@ class TestConstraints:
             last_burn_time=last,
             has_los=True,
         )
-        assert valid, "Burn exactly 600s after last must be accepted"
+        assert not valid, "Burn exactly 600s after last must be rejected"
 
     def test_no_previous_burn_skips_cooldown(self):
         """With last_burn_time=None the cooldown check must be skipped entirely."""

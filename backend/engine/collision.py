@@ -53,8 +53,24 @@ class ConjunctionAssessor:
     def __init__(self, propagator) -> None:
         self.propagator = propagator
         # Dedicated propagator with relaxed tolerances for Stage-2 debris
-        # screening.  Avoids mutating shared propagator state entirely.
         self._screening_propagator = OrbitalPropagator(rtol=1e-4, atol=1e-6)
+
+    @staticmethod
+    def _compute_apo_peri(states: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        r_vec = states[:, :3]
+        v_vec = states[:, 3:]
+        r = np.linalg.norm(r_vec, axis=1)
+        v2 = np.sum(v_vec**2, axis=1)
+        eps = v2 / 2.0 - MU_EARTH / r
+        a = -MU_EARTH / (2.0 * eps)
+        h_vec = np.cross(r_vec, v_vec)
+        h2 = np.sum(h_vec**2, axis=1)
+        e = np.sqrt(np.clip(1.0 + 2.0 * eps * h2 / (MU_EARTH**2), 0.0, None))
+        rp = a * (1.0 - e)
+        ra = a * (1.0 + e)
+        rp = np.where(a > 0, rp, r)
+        ra = np.where(a > 0, ra, float('inf'))
+        return rp, ra
 
     def assess(
         self,
@@ -85,14 +101,17 @@ class ConjunctionAssessor:
         debris_positions: np.ndarray = np.array([sv[:3] for sv in debris_states.values()])
 
         # ── Stage 1: Altitude Band Filter — O(D) ────────────────────────────
-        # Compute the union of ±50 km altitude shells for all satellites.
+        # Compute the union of ±50 km altitude shells for all satellites' periapsis/apoapsis.
         # Debris outside EVERY satellite's shell cannot close to collision
         # threshold within the propagation window → discard before KDTree build.
-        sat_radii: np.ndarray = np.array([np.linalg.norm(sv[:3]) for sv in sat_states.values()])
-        r_min = float(sat_radii.min()) - 50.0
-        r_max = float(sat_radii.max()) + 50.0
-        debris_radii: np.ndarray = np.linalg.norm(debris_positions, axis=1)
-        alt_mask: np.ndarray = (debris_radii >= r_min) & (debris_radii <= r_max)
+        sat_states_arr: np.ndarray = np.array(list(sat_states.values()))
+        sat_rp, sat_ra = self._compute_apo_peri(sat_states_arr)
+        r_min = float(sat_rp.min()) - 50.0
+        r_max = float(sat_ra.max()) + 50.0
+
+        deb_states_arr: np.ndarray = np.array(list(debris_states.values()))
+        deb_rp, deb_ra = self._compute_apo_peri(deb_states_arr)
+        alt_mask: np.ndarray = (deb_rp <= r_max) & (deb_ra >= r_min)
 
         filtered_ids: list[str] = [debris_ids[i] for i, keep in enumerate(alt_mask) if keep]
         filtered_positions: np.ndarray = debris_positions[alt_mask]

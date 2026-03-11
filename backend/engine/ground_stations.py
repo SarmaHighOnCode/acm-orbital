@@ -72,12 +72,10 @@ class GroundStationNetwork:
         ])
 
         # 2. Rotate GS ECEF to ECI (Simplification: Lon grows with GMST)
-        # 24h = 86400s. Earth rotates 360 deg in 86400s.
-        # We use the timestamp's total seconds from epoch to find approximate rotation.
-        # This is a hackathon-sufficient approximation of Earth rotation.
+        # We use a sidereal day (86164.0905 s) to prevent 1 degree/day drift.
         epoch = datetime(1970, 1, 1, tzinfo=timezone.utc) if timestamp.tzinfo else datetime(1970, 1, 1)
         seconds_from_epoch = (timestamp - epoch).total_seconds()
-        rotation_angle = (seconds_from_epoch % 86400) * (2 * np.pi / 86400)
+        rotation_angle = (seconds_from_epoch % 86164.0905) * (2 * np.pi / 86164.0905)
         
         c, s = np.cos(rotation_angle), np.sin(rotation_angle)
         rot_matrix = np.array([

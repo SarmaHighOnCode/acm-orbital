@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 
 from schemas import ManeuverRequest, ManeuverResponse
 
@@ -38,4 +38,7 @@ async def schedule_maneuver(
         payload.satelliteId,
         result.get("status", "UNKNOWN"),
     )
+    if result.get("status") == "REJECTED" and result.get("reason"):
+        if "max thrust" in result["reason"].lower():
+            raise HTTPException(status_code=400, detail=result["reason"])
     return ManeuverResponse(**result)
