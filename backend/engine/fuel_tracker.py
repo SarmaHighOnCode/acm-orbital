@@ -74,10 +74,12 @@ class FuelTracker:
                         which is almost certainly a unit error (km/s passed as m/s).
         """
         if delta_v_ms > MAX_DV_PER_BURN + 1.0:
-            raise ValueError(
-                f"delta_v_ms={delta_v_ms:.4f} exceeds max burn ({MAX_DV_PER_BURN} m/s). "
-                "Likely unit error — ensure input is in m/s, not km/s."
+            logger.critical(
+                "FUEL | %s | delta_v_ms=%.4f exceeds max burn (%.1f m/s) — "
+                "clamping to MAX_DV_PER_BURN. Likely unit error.",
+                sat_id, delta_v_ms, MAX_DV_PER_BURN,
             )
+            delta_v_ms = MAX_DV_PER_BURN
 
         current_fuel: float = self._fuel.get(sat_id, 0.0)
         current_mass: float = M_DRY + current_fuel   # wet mass at start of burn (kg)

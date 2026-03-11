@@ -30,6 +30,7 @@ from config import (
     EOL_FUEL_THRESHOLD_KG,
     STATION_KEEPING_RADIUS_KM,
     SIGNAL_LATENCY_S,
+    THRUSTER_COOLDOWN_S,
 )
 from engine.models import Satellite, Debris, CDM
 from engine.propagator import OrbitalPropagator
@@ -416,7 +417,32 @@ class SimulationEngine:
                         target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
                     ).isoformat()
 
-            sat.maneuver_queue.extend(burns)
+            # Cooldown enforcement: auto-planned burns must respect the same
+            # 600 s thruster cooldown as manually-scheduled burns.  Compute the
+            # effective last-burn time from executed history + queued burns, then
+            # filter out any auto-planned burn that would violate cooldown.
+            effective_last_auto: datetime | None = sat.last_burn_time
+            if sat.maneuver_queue:
+                last_queued = max(
+                    datetime.fromisoformat(b["burnTime"].replace("Z", "+00:00"))
+                    for b in sat.maneuver_queue
+                )
+                if effective_last_auto is None or last_queued > effective_last_auto:
+                    effective_last_auto = last_queued
+
+            validated_burns: list[dict] = []
+            for burn in burns:
+                bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
+                if effective_last_auto is not None:
+                    cooldown_gap = (bt - effective_last_auto).total_seconds()
+                    if cooldown_gap < THRUSTER_COOLDOWN_S:
+                        # Shift burn forward to satisfy cooldown constraint
+                        bt = effective_last_auto + timedelta(seconds=THRUSTER_COOLDOWN_S)
+                        burn["burnTime"] = bt.isoformat()
+                validated_burns.append(burn)
+                effective_last_auto = bt
+
+            sat.maneuver_queue.extend(validated_burns)
             sat.status = "EVADING"
 
         # ── Step 6: EOL threshold check ────────────────────────────────────────

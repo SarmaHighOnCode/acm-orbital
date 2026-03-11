@@ -10,10 +10,11 @@ Algorithm complexity per assess() call:
     Stage 2: O(D_alt log D_alt)   SciPy KDTree build
              O(S log D_alt)       S satellite query_ball_point calls (50 km radius)
     Stage 3: O(k)                 dense DOP853 batch propagation for k unique targets
-             O(k · F)             Brent TCA refinement; F ≈ 20 polynomial evals each O(1)
+             O(k · W · F)         Multi-start Brent TCA refinement; W ≈ T/(T_period/2)
+                                  sub-windows, F ≈ 20 polynomial evals each O(1)
     Stage 4: O(k)                 CDM emission
 
-    Total: O(D + S·log(D_alt) + k·F)   with k ≪ S·D due to Stage 1+2 filtering.
+    Total: O(D + S·log(D_alt) + k·W·F)   with k ≪ S·D due to Stage 1+2 filtering.
     Eliminates the naïve O(S·D) nested loop entirely.
 
 CDM relative-velocity accuracy note:
@@ -32,7 +33,7 @@ import numpy as np
 from scipy.spatial import KDTree
 from scipy.optimize import minimize_scalar
 
-from config import CONJUNCTION_THRESHOLD_KM, LOOKAHEAD_SECONDS
+from config import CONJUNCTION_THRESHOLD_KM, LOOKAHEAD_SECONDS, MU_EARTH
 from engine.models import CDM
 from engine.propagator import OrbitalPropagator
 
@@ -152,20 +153,43 @@ class ConjunctionAssessor:
             sol_sat = sat_solutions[sat_id]
             sol_deb = deb_solutions[deb_id]
 
-            # Brent's method over [0, lookahead_s].
-            # Each lambda evaluation is an O(1) polynomial interpolation —
-            # ~20 evaluations total vs ~20 full DOP853 integrations in the naïve
-            # approach: ≈ 10× faster per candidate pair.
-            res = minimize_scalar(
-                lambda t, _s=sol_sat, _d=sol_deb: float(
-                    np.linalg.norm(_s(t)[:3] - _d(t)[:3])
-                ),
-                bounds=(0.0, lookahead_s),
-                method="bounded",
+            # Multi-start Brent TCA refinement.
+            # A single minimize_scalar over [0, 86400s] would find only ONE
+            # local minimum. LEO objects orbit in ~90 min, so there can be
+            # ~16 close-approach windows in a 24h lookahead.  We subdivide
+            # the interval at half-period steps derived from the satellite's
+            # specific orbital energy and run Brent on each sub-interval,
+            # then take the global minimum across all windows.
+            r_sat = np.linalg.norm(sol_sat(0.0)[:3])
+            sma = -MU_EARTH / (2.0 * (
+                0.5 * np.linalg.norm(sol_sat(0.0)[3:])**2 - MU_EARTH / r_sat
+            ))
+            half_period = np.pi * np.sqrt(sma**3 / MU_EARTH)  # T/2 in seconds
+            # Clamp sub-interval to [half_period, lookahead_s] for safety
+            sub_interval = max(float(half_period), 900.0)  # at least 15 min
+
+            dist_fn = lambda t, _s=sol_sat, _d=sol_deb: float(
+                np.linalg.norm(_s(t)[:3] - _d(t)[:3])
             )
 
-            tca_s: float = float(res.x)
-            miss_distance_km: float = float(res.fun)
+            best_tca: float = 0.0
+            best_miss: float = dist_fn(0.0)
+
+            t_lo = 0.0
+            while t_lo < lookahead_s:
+                t_hi = min(t_lo + sub_interval, lookahead_s)
+                if t_hi - t_lo < 1.0:  # skip degenerate sub-intervals
+                    break
+                res = minimize_scalar(
+                    dist_fn, bounds=(t_lo, t_hi), method="bounded",
+                )
+                if res.fun < best_miss:
+                    best_miss = float(res.fun)
+                    best_tca = float(res.x)
+                t_lo = t_hi
+
+            tca_s: float = best_tca
+            miss_distance_km: float = best_miss
 
             # Emit CDM only for YELLOW / RED / CRITICAL risk levels
             if miss_distance_km < 5.0:
