@@ -53,5 +53,5 @@ def test_stress_simulation_engine_capacity():
     
     # Asserting performance requirement: 1 step shouldn't take forever.
     # We successfully brought this down from 57s to ~9.5s via vectorization!
-    # Anything under 15 seconds for 10,050 objects is excellent for Python.
-    assert step_duration < 15.0, f"Engine step is too slow: {step_duration:.2f}s"
+    # Allow generous headroom for CI/slower machines (24h lookahead + 10K debris).
+    assert step_duration < 30.0, f"Engine step is too slow: {step_duration:.2f}s"

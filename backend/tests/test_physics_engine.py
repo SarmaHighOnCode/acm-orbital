@@ -537,7 +537,6 @@ class TestConstraints:
             current_time=self.now,
             last_burn_time=last,
             has_los=has_los,
-            fuel_kg=50.0,
         )
 
     # ── ΔV limit ─────────────────────────────────────────────────────────────
@@ -588,7 +587,6 @@ class TestConstraints:
             current_time=self.now,
             last_burn_time=last,
             has_los=True,
-            fuel_kg=50.0,
         )
         assert valid, "Burn exactly 600s after last must be accepted"
 

@@ -2,25 +2,25 @@
 simulation.py — SimulationEngine (Master Orchestrator)
 ══════════════════════════════════════════════════════
 THE CONTRACT: This is the single entry point the API layer uses.
-Dev 2 calls these methods. Dev 1 implements them.
+Dev 2 calls these methods.  Dev 1 implements them.
 Neither touches the other's internals.
-
 Owner: Dev 1 (Physics Engine)
 
 Tick sequence (PRD §4.7):
-  1. Propagate all objects
-  2. Execute scheduled maneuvers (apply ΔV, deduct fuel, enforce cooldown)
-  3. Run conjunction assessment (detect collisions at miss < 0.1 km)
-  4. Update station-keeping status (10 km nominal slot check)
-  5. Auto-plan maneuvers (queue evasion+recovery for CRITICAL CDMs)
-  6. Check EOL thresholds (fuel ≤ 2.5 kg → graveyard)
-  7. Generate snapshot
+    1. Propagate all objects (vectorised DOP853 batch — O(N) solver calls)
+    2. Execute scheduled maneuvers (apply ΔV, deduct fuel, enforce 600 s cooldown)
+    3. Run conjunction assessment (4-stage KDTree pipeline — O(S log D + k·F))
+       + instantaneous collision scan at current positions (O(S log D) KDTree)
+    4. Update station-keeping status (10 km nominal slot check)
+    5. Auto-plan maneuvers (queue evasion+recovery for CRITICAL CDMs)
+    6. Check EOL thresholds (fuel ≤ 2.5 kg → graveyard)
+    7. Advance simulation clock
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 from scipy.spatial import KDTree as _KDTree
@@ -42,9 +42,16 @@ logger = logging.getLogger("acm.engine.simulation")
 
 
 def _eci_to_lla(position: np.ndarray) -> tuple[float, float, float]:
-    """Convert ECI position [x,y,z] km to (lat_deg, lon_deg, alt_km).
+    """Convert ECI position [x, y, z] km to (lat_deg, lon_deg, alt_km).
 
-    Simplified spherical Earth model (sufficient for visualization).
+    Uses a simplified spherical Earth model (sufficient for visualisation).
+    For precision geodetic work, replace with an iterative WGS-84 conversion.
+
+    Args:
+        position: ECI [x, y, z] in km.
+
+    Returns:
+        (latitude_deg, longitude_deg, altitude_km)
     """
     x, y, z = position
     r = np.linalg.norm(position)
@@ -55,14 +62,20 @@ def _eci_to_lla(position: np.ndarray) -> tuple[float, float, float]:
 
 
 class SimulationEngine:
-    """Master orchestrator for the ACM simulation.
+    """Master orchestrator for the ACM orbital debris collision-avoidance simulation.
 
-    Maintains simulation clock, satellite/debris state, and coordinates
-    all physics subsystems (propagation, collision, maneuver, fuel).
+    Maintains the simulation clock, all satellite and debris state, and coordinates
+    the propagation, collision-detection, maneuver-planning, and fuel subsystems.
+
+    Thread-safety note: This class is designed for single-threaded use.  The
+    ConjunctionAssessor temporarily mutates propagator tolerances during debris
+    propagation; concurrent step() calls would require per-thread propagator
+    instances.
     """
 
-    def __init__(self):
-        self.sim_time: datetime = datetime.utcnow()
+    def __init__(self) -> None:
+        # Timezone-aware UTC clock — datetime.utcnow() is deprecated in Python 3.12+
+        self.sim_time: datetime = datetime.now(timezone.utc)
         self.satellites: dict[str, Satellite] = {}
         self.debris: dict[str, Debris] = {}
         self.active_cdms: list[CDM] = []
@@ -70,18 +83,28 @@ class SimulationEngine:
         self.maneuver_log: list[dict] = []
 
         # Subsystem components
-        self.propagator = OrbitalPropagator()
-        self.assessor = ConjunctionAssessor(self.propagator)
-        self.planner = ManeuverPlanner(propagator=self.propagator)
-        self.fuel_tracker = FuelTracker()
-        self.gs_network = GroundStationNetwork()
+        self.propagator    = OrbitalPropagator()
+        self.assessor      = ConjunctionAssessor(self.propagator)
+        self.planner       = ManeuverPlanner(propagator=self.propagator)
+        self.fuel_tracker  = FuelTracker()
+        self.gs_network    = GroundStationNetwork()
 
         logger.info("SimulationEngine initialized at %s", self.sim_time.isoformat())
 
-    # ── THE CONTRACT (API Layer calls these) ─────────────────────────────
+    # ── THE CONTRACT (API Layer calls these) ──────────────────────────────────
 
     def ingest_telemetry(self, timestamp: str, objects: list[dict]) -> dict:
-        """Called by POST /api/telemetry."""
+        """Ingest raw telemetry and update / register orbital objects.
+
+        Called by: POST /api/telemetry
+
+        Args:
+            timestamp: ISO-8601 epoch string (e.g. "2025-01-01T00:00:00Z").
+            objects:   List of object dicts with keys: id, type, r{x,y,z}, v{x,y,z}.
+
+        Returns:
+            ACK payload with processed_count and active_cdm_warnings.
+        """
         self.sim_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
 
         for obj in objects:
@@ -122,10 +145,23 @@ class SimulationEngine:
         }
 
     def schedule_maneuver(self, satellite_id: str, sequence: list[dict]) -> dict:
-        """Called by POST /api/maneuver/schedule.
+        """Validate and queue a multi-burn maneuver sequence for a satellite.
 
-        Validates each burn against operational constraints before scheduling.
-        ΔV arrives from API in km/s — converted to m/s for engine validation.
+        Called by: POST /api/maneuver/schedule
+
+        ΔV vectors arrive from the API in km/s; converted to m/s internally for
+        constraint validation (MAX_DV_PER_BURN is expressed in m/s per PRD §4.5).
+
+        Cooldown is enforced ACROSS THE ENTIRE SEQUENCE, not just against historical
+        burns — a 5-burn sequence cannot bypass the 600 s rule between its own burns.
+
+        Args:
+            satellite_id: Target satellite identifier.
+            sequence:     List of burn dicts: {burnTime, deltaV_vector{x,y,z} km/s}.
+
+        Returns:
+            Scheduling response with status ("SCHEDULED" | "REJECTED") and
+            validation fields.
         """
         if satellite_id not in self.satellites:
             return {
@@ -139,10 +175,9 @@ class SimulationEngine:
 
         sat = self.satellites[satellite_id]
 
-        # Seed effective_last_burn_time from executed history AND queued future burns.
-        # This prevents a multi-burn sequence from violating the 600 s cooldown among
-        # its own burns (e.g. B1 at T+700 s and B2 at T+1200 s are only 500 s apart).
-        effective_last_burn = sat.last_burn_time
+        # Seed effective_last_burn from executed history AND already-queued future
+        # burns so that cooldown is enforced end-to-end across submitted sequences.
+        effective_last_burn: datetime | None = sat.last_burn_time
         if sat.maneuver_queue:
             last_queued_time = max(
                 datetime.fromisoformat(b["burnTime"].replace("Z", "+00:00"))
@@ -152,34 +187,26 @@ class SimulationEngine:
                 effective_last_burn = last_queued_time
 
         for burn in sequence:
-            dv_kms = burn["deltaV_vector"]
-            dv_vec = np.array([dv_kms["x"], dv_kms["y"], dv_kms["z"]])
-            dv_magnitude_ms = float(np.linalg.norm(dv_vec)) * 1000.0  # km/s → m/s
+            dv_kms  = burn["deltaV_vector"]
+            dv_vec  = np.array([dv_kms["x"], dv_kms["y"], dv_kms["z"]])
+            dv_magnitude_ms = float(np.linalg.norm(dv_vec)) * 1000.0   # km/s → m/s
 
             burn_time = datetime.fromisoformat(
                 burn["burnTime"].replace("Z", "+00:00")
             )
 
-            # Ground station LOS check
-            has_los = self.gs_network.check_line_of_sight(
-                sat.position, burn_time
-            )
+            has_los = self.gs_network.check_line_of_sight(sat.position, burn_time)
 
-            # Constraint validation — use sequence-aware last burn time so cooldown
-            # is enforced both against executed history and earlier burns in this batch.
             is_valid, reason = self.planner.validate_burn(
                 delta_v_magnitude_ms=dv_magnitude_ms,
                 burn_time=burn_time,
                 current_time=self.sim_time,
                 last_burn_time=effective_last_burn,
                 has_los=has_los,
-                fuel_kg=self.fuel_tracker.get_fuel(satellite_id),
             )
 
             if not is_valid:
-                logger.warning(
-                    "MANEUVER | %s | REJECTED | %s", satellite_id, reason
-                )
+                logger.warning("MANEUVER | %s | REJECTED | %s", satellite_id, reason)
                 return {
                     "status": "REJECTED",
                     "validation": {
@@ -193,11 +220,8 @@ class SimulationEngine:
                     },
                 }
 
-            # Fuel sufficiency check
             if not self.fuel_tracker.sufficient_fuel(satellite_id, dv_magnitude_ms):
-                logger.warning(
-                    "MANEUVER | %s | REJECTED | Insufficient fuel", satellite_id
-                )
+                logger.warning("MANEUVER | %s | REJECTED | Insufficient fuel", satellite_id)
                 return {
                     "status": "REJECTED",
                     "validation": {
@@ -209,11 +233,9 @@ class SimulationEngine:
                     },
                 }
 
-            # Advance effective last burn so the next burn in this sequence
-            # is validated against cooldown from THIS burn, not an older one.
+            # Advance the sequence-local last-burn pointer for the next iteration
             effective_last_burn = burn_time
 
-        # All burns validated — queue them
         sat.maneuver_queue.extend(sequence)
         logger.info("MANEUVER | %s | Queued %d burns", satellite_id, len(sequence))
 
@@ -229,64 +251,75 @@ class SimulationEngine:
         }
 
     def step(self, step_seconds: int) -> dict:
-        """Advance simulation clock and execute the full 7-step tick."""
-        old_time = self.sim_time
+        """Advance the simulation clock and execute the full 7-step physics tick.
+
+        Called by: POST /api/simulate/step
+
+        Args:
+            step_seconds: Time step duration in seconds.
+
+        Returns:
+            Tick summary: status, new_timestamp, collisions_detected,
+            maneuvers_executed.
+        """
+        old_time    = self.sim_time
         target_time = self.sim_time + timedelta(seconds=step_seconds)
         collisions_detected = 0
-        maneuvers_executed = 0
+        maneuvers_executed  = 0
 
-        # ── Step 1: Propagate all objects ────────────────────────────────
+        # ── Step 1: Propagate all objects — single vectorised DOP853 call each ──
+        # Satellites: actual states
         sat_states = {sid: sat.state_vector for sid, sat in self.satellites.items()}
         new_sat_states = self.propagator.propagate_batch(sat_states, step_seconds)
         for sid, new_sv in new_sat_states.items():
             self.satellites[sid].state_vector = new_sv
 
-        # Propagate nominal slots (unperturbed reference orbits)
+        # Satellites: nominal slot reference orbits (propagated in parallel batch)
         nominal_states = {sid: sat.nominal_state for sid, sat in self.satellites.items()}
         new_nominal_states = self.propagator.propagate_batch(nominal_states, step_seconds)
         for sid, new_sv in new_nominal_states.items():
             self.satellites[sid].nominal_state = new_sv
 
+        # Debris cloud
         deb_states = {did: deb.state_vector for did, deb in self.debris.items()}
         new_deb_states = self.propagator.propagate_batch(deb_states, step_seconds)
         for did, new_sv in new_deb_states.items():
             self.debris[did].state_vector = new_sv
 
-        # ── Step 2: Execute scheduled maneuvers ─────────────────────────
+        # ── Step 2: Execute scheduled maneuvers ───────────────────────────────
         for sat_id, sat in self.satellites.items():
-            remaining_queue = []
+            remaining_queue: list[dict] = []
             for burn in sat.maneuver_queue:
                 burn_time = datetime.fromisoformat(
                     burn["burnTime"].replace("Z", "+00:00")
                 )
                 if burn_time < old_time:
-                    # Stale burn: window already passed without execution (e.g. after
-                    # a large time skip). Silently discard — do not execute retroactively.
+                    # Stale burn: window passed without execution (e.g. large time-skip).
+                    # Discard silently — do NOT apply retroactively.
                     logger.warning(
                         "MANEUVER | %s | Discarding stale burn %s (scheduled %s, now %s)",
-                        sat_id, burn.get("burn_id", "BURN"),
-                        burn_time.isoformat(), old_time.isoformat(),
+                        sat_id,
+                        burn.get("burn_id", "BURN"),
+                        burn_time.isoformat(),
+                        old_time.isoformat(),
                     )
                     continue
+
                 if burn_time <= target_time:
-                    dv = burn["deltaV_vector"]
-                    dv_vec = np.array([dv["x"], dv["y"], dv["z"]])  # km/s
+                    dv     = burn["deltaV_vector"]
+                    dv_vec = np.array([dv["x"], dv["y"], dv["z"]])   # km/s
                     dv_mag_ms = float(np.linalg.norm(dv_vec)) * 1000.0
 
-                    # Apply ΔV to satellite velocity (km/s)
-                    sat.velocity = sat.velocity + dv_vec
-
-                    # Deduct fuel
+                    sat.velocity      = sat.velocity + dv_vec         # apply ΔV (km/s)
                     self.fuel_tracker.consume(sat_id, dv_mag_ms)
-                    sat.fuel_kg = self.fuel_tracker.get_fuel(sat_id)
+                    sat.fuel_kg        = self.fuel_tracker.get_fuel(sat_id)
                     sat.last_burn_time = burn_time
-                    sat.status = "EVADING"
+                    sat.status         = "EVADING"
                     maneuvers_executed += 1
 
                     logger.info(
                         "MANEUVER | %s | %s | ΔV=%.4f m/s | Fuel remaining: %.2f kg",
-                        sat_id, burn.get("burn_id", "BURN"),
-                        dv_mag_ms, sat.fuel_kg,
+                        sat_id, burn.get("burn_id", "BURN"), dv_mag_ms, sat.fuel_kg,
                     )
                     self.maneuver_log.append({
                         "satellite_id": sat_id,
@@ -298,48 +331,58 @@ class SimulationEngine:
                     remaining_queue.append(burn)
             sat.maneuver_queue = remaining_queue
 
-        # ── Step 3: Conjunction assessment & collision detection ─────────
+        # ── Step 3: Conjunction assessment & instantaneous collision scan ──────
+        # 3a. 24-h lookahead CDMs via the 4-stage KDTree pipeline — O(S log D + k·F)
         self.active_cdms = self.assessor.assess(
             {s.id: s.state_vector for s in self.satellites.values()},
             {d.id: d.state_vector for d in self.debris.values()},
             current_time=target_time,
         )
 
-        # Check for actual collisions at current positions — O(S log D) via KDTree,
-        # NOT O(S×D) Python loops.  With 50 sats × 10K debris the naive approach
-        # runs 500,000 Python iterations; KDTree queries are ~100× faster.
+        # 3b. Instantaneous collision scan at current positions — O(S log D).
+        # Build the KDTree ONCE over all D debris, then issue a single vectorised
+        # query_ball_point call for ALL S satellites simultaneously.  This is a
+        # single C-layer call vs S separate Python round-trips.
         if self.satellites and self.debris:
-            _deb_ids  = list(self.debris.keys())
-            _deb_pos  = np.array([d.position for d in self.debris.values()])
-            _deb_tree = _KDTree(_deb_pos)
-            for sat in self.satellites.values():
-                for idx in _deb_tree.query_ball_point(
-                    sat.position, r=CONJUNCTION_THRESHOLD_KM
-                ):
-                    deb  = self.debris[_deb_ids[idx]]
-                    dist = float(np.linalg.norm(sat.position - deb.position))
-                    if dist < CONJUNCTION_THRESHOLD_KM:
-                        collisions_detected += 1
-                        logger.critical(
-                            "COLLISION | %s × %s | Time:%s | Distance:%.4f km",
-                            sat.id, deb.id, target_time.isoformat(), dist,
-                        )
-                        self.collision_log.append({
-                            "satellite_id": sat.id,
-                            "debris_id": deb.id,
-                            "time": target_time.isoformat(),
-                            "distance_km": dist,
-                        })
+            _deb_ids: list[str]    = list(self.debris.keys())
+            _deb_pos: np.ndarray   = np.array([d.position for d in self.debris.values()])
+            _sat_ids: list[str]    = list(self.satellites.keys())
+            _sat_pos: np.ndarray   = np.array([s.position for s in self.satellites.values()])
 
-        # ── Step 4: Station-keeping status ───────────────────────────────
+            _deb_tree = _KDTree(_deb_pos)
+
+            # Batch query: returns a list of lists — one per satellite — in one call
+            hit_lists = _deb_tree.query_ball_point(_sat_pos, r=CONJUNCTION_THRESHOLD_KM)
+
+            for s_idx, neighbor_indices in enumerate(hit_lists):
+                if not neighbor_indices:
+                    continue
+                sat = self.satellites[_sat_ids[s_idx]]
+                for deb_idx in neighbor_indices:
+                    # KDTree guarantees dist <= CONJUNCTION_THRESHOLD_KM for all
+                    # returned indices — redundant Euclidean recheck removed.
+                    deb  = self.debris[_deb_ids[deb_idx]]
+                    dist = float(np.linalg.norm(sat.position - deb.position))
+                    collisions_detected += 1
+                    logger.critical(
+                        "COLLISION | %s × %s | Time:%s | Distance:%.4f km",
+                        sat.id, deb.id, target_time.isoformat(), dist,
+                    )
+                    self.collision_log.append({
+                        "satellite_id": sat.id,
+                        "debris_id":    deb.id,
+                        "time":         target_time.isoformat(),
+                        "distance_km":  dist,
+                    })
+
+        # ── Step 4: Station-keeping status ─────────────────────────────────────
         for sat in self.satellites.values():
             if sat.status == "EOL":
-                continue  # terminal — never overwrite
+                continue   # terminal state — never overwrite
             slot_offset = float(np.linalg.norm(sat.position - sat.nominal_state[:3]))
-            in_slot = slot_offset <= STATION_KEEPING_RADIUS_KM
+            in_slot     = slot_offset <= STATION_KEEPING_RADIUS_KM
             if sat.status == "EVADING":
-                # Transition out of EVADING once all queued burns have fired.
-                # Without this the satellite would be EVADING forever after any maneuver.
+                # Transition out of EVADING once all queued burns have fired
                 if not sat.maneuver_queue:
                     sat.status = "NOMINAL" if in_slot else "RECOVERING"
             elif in_slot:
@@ -347,7 +390,7 @@ class SimulationEngine:
             else:
                 sat.status = "RECOVERING"
 
-        # ── Step 5: Auto-plan maneuvers for CRITICAL conjunctions ────────
+        # ── Step 5: Auto-plan maneuvers for CRITICAL conjunctions ──────────────
         for cdm in self.active_cdms:
             if cdm.risk != "CRITICAL":
                 continue
@@ -355,9 +398,8 @@ class SimulationEngine:
             deb = self.debris.get(cdm.debris_id)
             if sat is None or deb is None:
                 continue
-            # Don't double-queue if already evading
             if sat.status == "EVADING" and sat.maneuver_queue:
-                continue
+                continue   # already has an active evasion sequence — don't double-queue
 
             burns = self.planner.plan_evasion(
                 satellite=sat, debris=deb,
@@ -365,13 +407,11 @@ class SimulationEngine:
                 current_time=target_time,
             )
 
-            # Check LOS for scheduled burns, defer if in blackout
+            # LOS blackout guard: reschedule out-of-contact burns to just before
+            # the blackout window ends (signal_latency + 60 s safety margin).
             for burn in burns:
-                bt = datetime.fromisoformat(
-                    burn["burnTime"].replace("Z", "+00:00")
-                )
+                bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
                 if not self.gs_network.check_line_of_sight(sat.position, bt):
-                    # Pre-schedule before blackout — move burn earlier
                     burn["burnTime"] = (
                         target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
                     ).isoformat()
@@ -379,18 +419,19 @@ class SimulationEngine:
             sat.maneuver_queue.extend(burns)
             sat.status = "EVADING"
 
-        # ── Step 6: EOL threshold check ──────────────────────────────────
+        # ── Step 6: EOL threshold check ────────────────────────────────────────
         for sat_id, sat in self.satellites.items():
             if self.fuel_tracker.is_eol(sat_id) and sat.status != "EOL":
                 sat.status = "EOL"
                 logger.warning(
                     "EOL | %s | Fuel=%.2f kg ≤ threshold (%.1f kg) | "
                     "Graveyard maneuver scheduled",
-                    sat_id, self.fuel_tracker.get_fuel(sat_id),
+                    sat_id,
+                    self.fuel_tracker.get_fuel(sat_id),
                     EOL_FUEL_THRESHOLD_KG,
                 )
 
-        # ── Step 7: Advance clock ────────────────────────────────────────
+        # ── Step 7: Advance simulation clock ───────────────────────────────────
         self.sim_time = target_time
         logger.info(
             "SIMULATE | %s → %s | CDMs: %d | Collisions: %d | Maneuvers: %d",
@@ -406,22 +447,28 @@ class SimulationEngine:
         }
 
     def get_snapshot(self) -> dict:
-        """Called by GET /api/visualization/snapshot.
+        """Return the current simulation state for frontend rendering.
 
-        Returns current state for frontend rendering.
-        Satellite positions converted to lat/lon.
-        Debris cloud uses flattened [id, lat, lon, alt] tuples.
+        Called by: GET /api/visualization/snapshot
+
+        Satellite positions are converted to lat/lon/alt for the globe renderer.
+        The debris cloud is encoded as flat [id, lat, lon, alt] tuples to
+        minimise serialisation payload size for 10 000+ objects.
+
+        Returns:
+            Snapshot dict with satellites, debris_cloud, CDM count, and
+            maneuver queue depth.
         """
         satellites = []
         for sat in self.satellites.values():
             lat, lon, alt = _eci_to_lla(sat.position)
             satellites.append({
-                "id": sat.id,
-                "lat": round(lat, 3),
-                "lon": round(lon, 3),
-                "alt_km": round(alt, 1),
-                "fuel_kg": round(self.fuel_tracker.get_fuel(sat.id), 2),
-                "status": sat.status,
+                "id":       sat.id,
+                "lat":      round(lat, 3),
+                "lon":      round(lon, 3),
+                "alt_km":   round(alt, 1),
+                "fuel_kg":  round(self.fuel_tracker.get_fuel(sat.id), 2),
+                "status":   sat.status,
             })
 
         debris_cloud = []
@@ -432,9 +479,9 @@ class SimulationEngine:
         total_queued = sum(len(s.maneuver_queue) for s in self.satellites.values())
 
         return {
-            "timestamp": self.sim_time.isoformat(),
-            "satellites": satellites,
-            "debris_cloud": debris_cloud,
-            "active_cdm_count": len(self.active_cdms),
+            "timestamp":           self.sim_time.isoformat(),
+            "satellites":          satellites,
+            "debris_cloud":        debris_cloud,
+            "active_cdm_count":    len(self.active_cdms),
             "maneuver_queue_depth": total_queued,
         }

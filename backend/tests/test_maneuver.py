@@ -47,7 +47,6 @@ def test_validate_burn_exceeds_max_thrust():
         current_time=now,
         last_burn_time=None,
         has_los=True,
-        fuel_kg=50.0,
     )
     assert not valid
     assert "max thrust" in reason.lower()
@@ -63,7 +62,6 @@ def test_validate_burn_violates_signal_latency():
         current_time=now,
         last_burn_time=None,
         has_los=True,
-        fuel_kg=50.0,
     )
     assert not valid
     assert "latency" in reason.lower()
@@ -79,7 +77,6 @@ def test_validate_burn_violates_cooldown():
         current_time=now,
         last_burn_time=now - timedelta(seconds=300),
         has_los=True,
-        fuel_kg=50.0,
     )
     assert not valid
     assert "cooldown" in reason.lower()

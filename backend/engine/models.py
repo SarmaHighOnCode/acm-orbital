@@ -10,7 +10,7 @@ All positions in km (ECI J2000). All velocities in km/s.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -26,7 +26,7 @@ class OrbitalObject:
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
 
     @property
     def state_vector(self) -> np.ndarray:

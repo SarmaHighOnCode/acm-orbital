@@ -1,19 +1,26 @@
 """
 collision.py — KDTree Conjunction Assessment Pipeline
 ═════════════════════════════════════════════════════
-4-stage filter cascade for collision detection.
-O(N²) nested loops are FORBIDDEN. Uses KDTree for O(N log N) screening.
+4-stage filter cascade for O(S·log D) conjunction assessment.
+O(N²) nested loops are FORBIDDEN.
 Owner: Dev 1 (Physics Engine)
 
-Complexity per assess() call:
-  Stage 1 — O(D)           altitude band pre-filter  (shrinks D → D_alt ≈ 0.15 D)
-  Stage 2 — O(D_alt log D_alt + S log D_alt)  KDTree build + S queries
-  Stage 3 — O(k)           dense propagation, one DOP853 per unique object
-             O(k · F)      Brent TCA refinement, F ≈ 20 polynomial evaluations each O(1)
-  Stage 4 — O(k)           CDM emission
+Algorithm complexity per assess() call:
+    Stage 1: O(D)                 altitude-band pre-filter    (reduces D → D_alt ≈ 0.15 D)
+    Stage 2: O(D_alt log D_alt)   SciPy KDTree build
+             O(S log D_alt)       S satellite query_ball_point calls (50 km radius)
+    Stage 3: O(k)                 dense DOP853 batch propagation for k unique targets
+             O(k · F)             Brent TCA refinement; F ≈ 20 polynomial evals each O(1)
+    Stage 4: O(k)                 CDM emission
 
-  Total: O(D + S · log(D_alt) + k · F)  with k ≪ S·D due to Stage 1+2 filtering.
-  Avoids O(S·D) naïve nested loop.
+    Total: O(D + S·log(D_alt) + k·F)   with k ≪ S·D due to Stage 1+2 filtering.
+    Eliminates the naïve O(S·D) nested loop entirely.
+
+CDM relative-velocity accuracy note:
+    Velocities in the emitted CDM are sampled from the DOP853 dense polynomial
+    evaluated at the TCA time, NOT at the planning epoch.  For LEO pairs with
+    relative speeds of 7–15 km/s this matters: the velocity direction rotates
+    substantially between planning time and TCA.
 """
 
 from __future__ import annotations
@@ -27,21 +34,26 @@ from scipy.optimize import minimize_scalar
 
 from config import CONJUNCTION_THRESHOLD_KM, LOOKAHEAD_SECONDS
 from engine.models import CDM
+from engine.propagator import OrbitalPropagator
 
 logger = logging.getLogger("acm.engine.collision")
 
 
 class ConjunctionAssessor:
-    """4-stage conjunction assessment pipeline.
+    """4-stage conjunction assessment pipeline using KDTree spatial indexing.
 
-    Stage 1: Altitude band filter  — O(D), eliminates ~85% of debris before KDTree build
-    Stage 2: KDTree spatial index  — O(D_alt log D_alt) build + O(S log D_alt) queries
-    Stage 3: TCA refinement        — Brent's method with dense-output polynomial interpolants
-    Stage 4: CDM emission          — risk classification and warning generation
+    Stage 1: Altitude band filter  — O(D), eliminates ~85 % of debris before KDTree build.
+    Stage 2: KDTree spatial index  — O(D_alt log D_alt) build + O(S log D_alt) queries.
+    Stage 3: TCA refinement        — Brent's method on DOP853 dense-output polynomial
+                                     interpolants (O(1) per evaluation).
+    Stage 4: CDM emission          — risk classification and CDM generation.
     """
 
-    def __init__(self, propagator):
+    def __init__(self, propagator) -> None:
         self.propagator = propagator
+        # Dedicated propagator with relaxed tolerances for Stage-2 debris
+        # screening.  Avoids mutating shared propagator state entirely.
+        self._screening_propagator = OrbitalPropagator(rtol=1e-4, atol=1e-6)
 
     def assess(
         self,
@@ -53,9 +65,14 @@ class ConjunctionAssessor:
         """Run the full 4-stage conjunction assessment pipeline.
 
         Args:
-            current_time: Simulation clock at this assessment tick.
-                          CDM TCA timestamps are relative to this time.
-                          Defaults to UTC wall-clock if not provided.
+            sat_states:    {sat_id:   state_vector [x,y,z,vx,vy,vz] km/km·s⁻¹}
+            debris_states: {debris_id: state_vector [x,y,z,vx,vy,vz] km/km·s⁻¹}
+            lookahead_s:   Propagation window in seconds (default: 86400 s = 24 h).
+            current_time:  Simulation clock epoch; CDM.tca timestamps are expressed
+                           relative to this value.  Defaults to UTC wall-clock.
+
+        Returns:
+            List of CDM warnings for all pairs with miss_distance < 5 km.
         """
         base_time = current_time if current_time is not None else datetime.now(timezone.utc)
         warnings: list[CDM] = []
@@ -63,44 +80,51 @@ class ConjunctionAssessor:
         if not sat_states or not debris_states:
             return warnings
 
-        debris_ids = list(debris_states.keys())
-        debris_positions = np.array([sv[:3] for sv in debris_states.values()])
+        debris_ids: list[str] = list(debris_states.keys())
+        debris_positions: np.ndarray = np.array([sv[:3] for sv in debris_states.values()])
 
         # ── Stage 1: Altitude Band Filter — O(D) ────────────────────────────
-        # Compute union of ±50 km altitude shells across all satellites.
-        # Debris outside every satellite's shell cannot collide → discarded.
-        # Reduces D to D_alt before KDTree construction.
-        sat_radii = np.array([np.linalg.norm(sv[:3]) for sv in sat_states.values()])
+        # Compute the union of ±50 km altitude shells for all satellites.
+        # Debris outside EVERY satellite's shell cannot close to collision
+        # threshold within the propagation window → discard before KDTree build.
+        sat_radii: np.ndarray = np.array([np.linalg.norm(sv[:3]) for sv in sat_states.values()])
         r_min = float(sat_radii.min()) - 50.0
         r_max = float(sat_radii.max()) + 50.0
-        debris_radii = np.linalg.norm(debris_positions, axis=1)
-        alt_mask = (debris_radii >= r_min) & (debris_radii <= r_max)
-        filtered_ids = [debris_ids[i] for i, keep in enumerate(alt_mask) if keep]
-        filtered_positions = debris_positions[alt_mask]
+        debris_radii: np.ndarray = np.linalg.norm(debris_positions, axis=1)
+        alt_mask: np.ndarray = (debris_radii >= r_min) & (debris_radii <= r_max)
+
+        filtered_ids: list[str] = [debris_ids[i] for i, keep in enumerate(alt_mask) if keep]
+        filtered_positions: np.ndarray = debris_positions[alt_mask]
 
         if len(filtered_positions) == 0:
             return warnings
 
         # ── Stage 2: KDTree Spatial Index — O(D_alt log D_alt) build ────────
-        # 50 km query radius: any debris further away in 3-D cannot close to
-        # collision threshold within the propagation interval for LEO speeds.
+        # 50 km query radius: debris farther away in 3-D cannot close to the
+        # 100 m collision threshold within the lookahead window at LEO speeds.
         tree = KDTree(filtered_positions)
 
-        # Pre-propagate every satellite once with dense output using batch integration.
-        sat_ids_list, sat_batch_sol = self.propagator.propagate_dense_batch(sat_states, lookahead_s)
-        sat_solutions = {
+        # Batch-propagate every satellite with dense output using a single DOP853
+        # call (vectorised; not one call per satellite).
+        # Uses the screening propagator (rtol=1e-4) for BOTH satellites and debris
+        # to ensure symmetric tolerance — relative position errors cancel when
+        # both sides use the same integrator settings.
+        sat_ids_list, sat_batch_sol = self._screening_propagator.propagate_dense_batch(
+            sat_states, lookahead_s
+        )
+        # Map each sat_id to a closure that extracts its row from the batch solution.
+        sat_solutions: dict[str, object] = {
             sid: (lambda t, idx=i: sat_batch_sol(t)[idx])
             for i, sid in enumerate(sat_ids_list)
         }
 
-        # Identify all debris that passed KDTree check across all satellites
-        deb_targets = {}
-        candidate_pairs = []
-        
-        for sat_id, sat_state in sat_states.items():
-            # O(log D_alt + k_i) per satellite
-            neighbor_indices = tree.query_ball_point(sat_state[:3], r=50.0)
+        # Collect unique debris targets that survive KDTree screening.
+        deb_targets: dict[str, np.ndarray] = {}
+        candidate_pairs: list[tuple[str, str]] = []
 
+        for sat_id, sat_state in sat_states.items():
+            # O(log D_alt + k_i) query per satellite — never a Python loop over D
+            neighbor_indices = tree.query_ball_point(sat_state[:3], r=50.0)
             for idx in neighbor_indices:
                 deb_id = filtered_ids[idx]
                 deb_targets[deb_id] = debris_states[deb_id]
@@ -108,27 +132,30 @@ class ConjunctionAssessor:
 
         if not candidate_pairs:
             return warnings
-            
-        # Batch propagate all targeted debris with looser tolerances for speed
-        orig_rtol, orig_atol = self.propagator.rtol, self.propagator.atol
-        self.propagator.rtol, self.propagator.atol = 1e-4, 1e-6
-        deb_ids_list, deb_batch_sol = self.propagator.propagate_dense_batch(deb_targets, lookahead_s)
-        self.propagator.rtol, self.propagator.atol = orig_rtol, orig_atol
-        deb_solutions = {
+
+        # Batch-propagate candidate debris with the dedicated screening
+        # propagator (rtol=1e-4, atol=1e-6).  The looser tolerances are
+        # sufficient for TCA bracketing; Stage 3 Brent refinement uses the
+        # polynomial interpolant, not raw integration steps.  Using a separate
+        # propagator instance avoids mutating shared state (thread-safe).
+        deb_ids_list, deb_batch_sol = self._screening_propagator.propagate_dense_batch(
+            deb_targets, lookahead_s
+        )
+
+        deb_solutions: dict[str, object] = {
             did: (lambda t, idx=i: deb_batch_sol(t)[idx])
             for i, did in enumerate(deb_ids_list)
         }
-        
+
+        # ── Stage 3 & 4: TCA Refinement + CDM Emission ───────────────────────
         for sat_id, deb_id in candidate_pairs:
             sol_sat = sat_solutions[sat_id]
             sol_deb = deb_solutions[deb_id]
-            sat_state = sat_states[sat_id]
-            deb_state = debris_states[deb_id]
 
-            # ── Stage 3: TCA Refinement — Brent's method ────────────────
-            # Each lambda evaluation is O(1) polynomial interpolation.
-            # Total cost per pair: ~20 O(1) evals vs ~20 full DOP853 calls
-            # in the naïve approach — roughly 10× faster per candidate.
+            # Brent's method over [0, lookahead_s].
+            # Each lambda evaluation is an O(1) polynomial interpolation —
+            # ~20 evaluations total vs ~20 full DOP853 integrations in the naïve
+            # approach: ≈ 10× faster per candidate pair.
             res = minimize_scalar(
                 lambda t, _s=sol_sat, _d=sol_deb: float(
                     np.linalg.norm(_s(t)[:3] - _d(t)[:3])
@@ -137,38 +164,63 @@ class ConjunctionAssessor:
                 method="bounded",
             )
 
-            tca_s = res.x
-            miss_distance_km = res.fun
+            tca_s: float = float(res.x)
+            miss_distance_km: float = float(res.fun)
 
-            # ── Stage 4: CDM Emission ────────────────────────────────────
-            if miss_distance_km < 5.0:  # YELLOW / RED / CRITICAL only
+            # Emit CDM only for YELLOW / RED / CRITICAL risk levels
+            if miss_distance_km < 5.0:
                 risk = self._classify_risk(miss_distance_km)
+
+                # Sample TCA-time state vectors directly from the polynomial
+                # interpolant for physically accurate relative velocity.
+                # Using planning-epoch velocities here would be wrong: at LEO
+                # speeds (7–15 km/s), the velocity direction rotates significantly
+                # between assessment time and TCA.
+                tca_sat_state: np.ndarray = sol_sat(tca_s)   # shape (6,)
+                tca_deb_state: np.ndarray = sol_deb(tca_s)   # shape (6,)
+                rel_vel_km_s = float(
+                    np.linalg.norm(tca_sat_state[3:] - tca_deb_state[3:])
+                )
+
                 warnings.append(CDM(
                     satellite_id=sat_id,
                     debris_id=deb_id,
                     tca=base_time + timedelta(seconds=tca_s),
-                    miss_distance_km=float(miss_distance_km),
+                    miss_distance_km=miss_distance_km,
                     risk=risk,
-                    relative_velocity_km_s=float(
-                        np.linalg.norm(sat_state[3:] - deb_state[3:])
-                    ),
+                    relative_velocity_km_s=rel_vel_km_s,
                 ))
 
         logger.info(
             "CA | %d sats | %d/%d debris after Stage 1 | %d candidate pairs | %d CDMs",
-            len(sat_states), len(filtered_ids), len(debris_ids),
-            len(candidate_pairs),  # reuse already-computed set — no duplicate queries
+            len(sat_states),
+            len(filtered_ids),
+            len(debris_ids),
+            len(candidate_pairs),
             len(warnings),
         )
         return warnings
 
     @staticmethod
     def _classify_risk(miss_distance_km: float) -> str:
-        """Classify conjunction risk based on miss distance."""
-        if miss_distance_km < CONJUNCTION_THRESHOLD_KM:
+        """Classify conjunction risk level from miss distance.
+
+        Thresholds (Problem Statement §5.2):
+            CRITICAL : miss < 0.100 km  (100 m — hard collision threshold)
+            RED      : miss < 1.0   km
+            YELLOW   : miss < 5.0   km
+            GREEN    : miss ≥ 5.0   km  (not emitted — caller filters at 5 km)
+
+        Args:
+            miss_distance_km: Miss distance at TCA in km.
+
+        Returns:
+            Risk level string: "CRITICAL" | "RED" | "YELLOW" | "GREEN".
+        """
+        if miss_distance_km < CONJUNCTION_THRESHOLD_KM:   # 0.100 km = 100 m
             return "CRITICAL"
-        elif miss_distance_km < 1.0:
+        if miss_distance_km < 1.0:
             return "RED"
-        elif miss_distance_km < 5.0:
+        if miss_distance_km < 5.0:
             return "YELLOW"
         return "GREEN"
