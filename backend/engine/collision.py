@@ -8,7 +8,7 @@ Owner: Dev 1 (Physics Engine)
 Algorithm complexity per assess() call:
     Stage 1: O(D)                 altitude-band pre-filter    (reduces D → D_alt ≈ 0.15 D)
     Stage 2: O(D_alt log D_alt)   SciPy KDTree build
-             O(S log D_alt)       S satellite query_ball_point calls (50 km radius)
+             O(S log D_alt)       S satellite query_ball_point calls (200 km radius)
     Stage 3: O(k)                 dense DOP853 batch propagation for k unique targets
              O(k · W · F)         Multi-start Brent TCA refinement; W ≈ T/(T_period/2)
                                   sub-windows, F ≈ 20 polynomial evals each O(1)
@@ -144,7 +144,10 @@ class ConjunctionAssessor:
 
         for sat_id, sat_state in sat_states.items():
             # O(log D_alt + k_i) query per satellite — never a Python loop over D
-            neighbor_indices = tree.query_ball_point(sat_state[:3], r=50.0)
+            # 200 km radius (expanded from 50 km) eliminates the false-negative
+            # blind spot for crossing-orbit pairs that start >50 km apart but
+            # converge to <100 m within the TCA refinement window.
+            neighbor_indices = tree.query_ball_point(sat_state[:3], r=200.0)
             for idx in neighbor_indices:
                 deb_id = filtered_ids[idx]
                 deb_targets[deb_id] = debris_states[deb_id]
