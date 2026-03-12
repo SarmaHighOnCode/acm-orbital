@@ -1,8 +1,12 @@
 .git
 .github
 node_modules
+frontend/node_modules
 __pycache__
+**/__pycache__
+**/*.pyc
 .venv
+backend/.venv
 .pytest_cache
 .mypy_cache
 .ruff_cache
@@ -15,3 +19,9 @@ docs/
 Thumbs.db
 .env
 .env.local
+live_telemetry.json
+frontend/dist
+.claude
+.planning
+.agents
+stress_result.txt

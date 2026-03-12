@@ -11,8 +11,9 @@ ENV PYTHONUNBUFFERED=1
 
 # ── Phase 1: System Dependencies ──────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3-pip \
+    python3.11 python3.11-venv python3.11-distutils \
     curl ca-certificates \
+    && curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.11 - \
     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -21,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip3 install --no-cache-dir -r /app/backend/requirements.txt
+RUN python3.11 -m pip install --no-cache-dir -r /app/backend/requirements.txt
 
 COPY backend/ /app/backend/
 
@@ -39,7 +40,7 @@ EXPOSE 8000
 
 WORKDIR /app/backend
 
-CMD ["python3", "-m", "uvicorn", "main:app", \
+CMD ["python3.11", "-m", "uvicorn", "main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--workers", "1", \
