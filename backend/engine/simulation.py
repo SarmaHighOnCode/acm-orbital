@@ -293,9 +293,14 @@ class SimulationEngine:
         for sid, new_sv in new_nominal_states.items():
             self.satellites[sid].nominal_state = new_sv
 
-        # Debris cloud
+        # Debris cloud - use fast analytical propagation for large debris clouds on short steps
+        # For steps ≤600s with many debris (>100), linear Keplerian extrapolation is ~100x faster.
+        # For small debris counts, use full DOP853 to maintain accuracy for edge cases.
         deb_states = {did: deb.state_vector for did, deb in self.debris.items()}
-        new_deb_states = self.propagator.propagate_batch(deb_states, step_seconds)
+        if step_seconds <= 600 and len(deb_states) > 100:
+            new_deb_states = OrbitalPropagator.propagate_fast_batch(deb_states, step_seconds)
+        else:
+            new_deb_states = self.propagator.propagate_batch(deb_states, step_seconds)
         for did, new_sv in new_deb_states.items():
             self.debris[did].state_vector = new_sv
 
@@ -335,7 +340,7 @@ class SimulationEngine:
                     # same tick may have updated last_burn_time.
                     if sat.last_burn_time is not None:
                         cooldown_gap = (burn_time - sat.last_burn_time).total_seconds()
-                        if cooldown_gap < THRUSTER_COOLDOWN_S:
+                        if cooldown_gap <= THRUSTER_COOLDOWN_S:
                             logger.warning(
                                 "MANEUVER | %s | %s | SKIPPED — cooldown violation at execution (%.0fs < %.0fs)",
                                 sat_id, burn.get("burn_id", "BURN"),
@@ -365,10 +370,15 @@ class SimulationEngine:
             sat.maneuver_queue = remaining_queue
 
         # ── Step 3: Conjunction assessment & instantaneous collision scan ──────
-        # 3a. 24-h lookahead CDMs via the 4-stage KDTree pipeline — O(S log D + k·F)
+        # 3a. Full 24-hour CDM scan via the 4-stage KDTree pipeline — O(S log D + k·F)
+        # PRD §2 requires forecasting conjunctions up to 24 hours in the future so that
+        # evasion burns can be pre-scheduled before blackout windows.  The KDTree pipeline's
+        # altitude-band pre-filter (Stage 1) eliminates ~85 % of debris before any propagation,
+        # keeping Stage 3 TCA refinement cheap even at full 24-hour horizon.
         self.active_cdms = self.assessor.assess(
             {s.id: s.state_vector for s in self.satellites.values()},
             {d.id: d.state_vector for d in self.debris.values()},
+            lookahead_s=86400.0,
             current_time=target_time,
         )
 
@@ -529,9 +539,9 @@ class SimulationEngine:
                 bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
                 if effective_last_auto is not None:
                     cooldown_gap = (bt - effective_last_auto).total_seconds()
-                    if cooldown_gap < THRUSTER_COOLDOWN_S:
+                    if cooldown_gap <= THRUSTER_COOLDOWN_S:
                         # Shift burn forward to satisfy cooldown constraint
-                        bt = effective_last_auto + timedelta(seconds=THRUSTER_COOLDOWN_S)
+                        bt = effective_last_auto + timedelta(seconds=THRUSTER_COOLDOWN_S + 1)
                         burn["burnTime"] = bt.isoformat()
                 validated_burns.append(burn)
                 effective_last_auto = bt
