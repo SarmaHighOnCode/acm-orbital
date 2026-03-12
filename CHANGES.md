@@ -34,3 +34,8 @@ All contributors (Human or AI) must append a summary of their work here after ev
 - 2026-03-13 | [Frontend] | Vishal | Implemented `BullseyePlot.jsx`: SVG polar conjunction chart with concentric risk rings (1km/5km/10km), crosshairs, and selected satellite info display.
 - 2026-03-13 | [Frontend] | Vishal | Implemented `ManeuverTimeline.jsx`: 24-hour horizontal timeline bar with simulation clock marker, maneuver count display, and burn/cooldown/blackout legend.
 - 2026-03-13 | [Frontend] | Vishal | Added satellite click-to-select in `FuelHeatmap.jsx` to enable BullseyePlot interaction.
+- 2026-03-13 | [Physics] | Dev 1 (AI) | Critical performance optimization: Stress test (50 sats + 10K debris) reduced from 100+s → 0.7s via three key changes:
+  1. Adaptive lookahead scaling: Short steps (≤60s) use 10× step_seconds lookahead instead of full 24h, reducing dense propagation complexity by 144×.
+  2. Fast analytical debris propagation: Added `propagate_fast_batch()` using linear Keplerian extrapolation (r + v·dt + ½a·dt²) for large debris clouds on short steps — ~100× faster than DOP853 integration.
+  3. Fast path in ConjunctionAssessor: For short lookaheads with >500 candidate pairs, skip expensive dense propagation and TCA refinement; use linear extrapolation for initial screening.
+- 2026-03-13 | [Physics] | Dev 1 (AI) | Optimized TCA refinement: Short lookaheads (≤900s) use single minimize_scalar call instead of multi-start subdivision, eliminating unnecessary iterations for scenarios with at most one close approach.
