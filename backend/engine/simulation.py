@@ -299,7 +299,7 @@ class SimulationEngine:
         for did, new_sv in new_deb_states.items():
             self.debris[did].state_vector = new_sv
 
-        # ── Step 2: Execute scheduled maneuvers ───────────────────────────────
+        # ── Step 2: Execute scheduled maneuvers (with runtime re-validation) ──
         for sat_id, sat in self.satellites.items():
             remaining_queue: list[dict] = []
             for burn in sat.maneuver_queue:
@@ -307,8 +307,6 @@ class SimulationEngine:
                     burn["burnTime"].replace("Z", "+00:00")
                 )
                 if burn_time < old_time:
-                    # Stale burn: window passed without execution (e.g. large time-skip).
-                    # Discard silently — do NOT apply retroactively.
                     logger.warning(
                         "MANEUVER | %s | Discarding stale burn %s (scheduled %s, now %s)",
                         sat_id,
@@ -323,7 +321,29 @@ class SimulationEngine:
                     dv_vec = np.array([dv["x"], dv["y"], dv["z"]])   # km/s
                     dv_mag_ms = float(np.linalg.norm(dv_vec)) * 1000.0
 
-                    sat.velocity      = sat.velocity + dv_vec         # apply ΔV (km/s)
+                    # ── Runtime re-validation ──────────────────────────────
+                    # Fuel sufficiency: conditions may have changed since
+                    # scheduling (earlier burns in this tick consumed fuel).
+                    if not self.fuel_tracker.sufficient_fuel(sat_id, dv_mag_ms):
+                        logger.warning(
+                            "MANEUVER | %s | %s | SKIPPED — insufficient fuel at execution",
+                            sat_id, burn.get("burn_id", "BURN"),
+                        )
+                        continue
+
+                    # Cooldown re-check: a preceding burn executed in this
+                    # same tick may have updated last_burn_time.
+                    if sat.last_burn_time is not None:
+                        cooldown_gap = (burn_time - sat.last_burn_time).total_seconds()
+                        if cooldown_gap < THRUSTER_COOLDOWN_S:
+                            logger.warning(
+                                "MANEUVER | %s | %s | SKIPPED — cooldown violation at execution (%.0fs < %.0fs)",
+                                sat_id, burn.get("burn_id", "BURN"),
+                                cooldown_gap, THRUSTER_COOLDOWN_S,
+                            )
+                            continue
+
+                    sat.velocity      = sat.velocity + dv_vec
                     self.fuel_tracker.consume(sat_id, dv_mag_ms)
                     sat.fuel_kg        = self.fuel_tracker.get_fuel(sat_id)
                     sat.last_burn_time = burn_time
@@ -352,41 +372,75 @@ class SimulationEngine:
             current_time=target_time,
         )
 
-        # 3b. Instantaneous collision scan at current positions — O(S log D).
-        # Build the KDTree ONCE over all D debris, then issue a single vectorised
-        # query_ball_point call for ALL S satellites simultaneously.  This is a
-        # single C-layer call vs S separate Python round-trips.
+        # 3b. Multi-sample collision scan across the step interval.
+        # For large steps (e.g. 3600 s) a single endpoint check misses transient
+        # close-approaches.  Use dense-output DOP853 polynomials to evaluate
+        # positions at N sub-steps, build a KDTree at each, and detect any
+        # collision within the window.
         if self.satellites and self.debris:
-            _deb_ids: list[str]    = list(self.debris.keys())
-            _deb_pos: np.ndarray   = np.array([d.position for d in self.debris.values()])
-            _sat_ids: list[str]    = list(self.satellites.keys())
-            _sat_pos: np.ndarray   = np.array([s.position for s in self.satellites.values()])
+            _deb_ids: list[str] = list(self.debris.keys())
+            _sat_ids: list[str] = list(self.satellites.keys())
 
-            _deb_tree = _KDTree(_deb_pos)
+            # Sub-step count: for short ticks few samples suffice;
+            # for step_seconds=3600 → 6 samples (every ~10 min).
+            _n_sub = max(1, min(int(step_seconds / 600), 6))
+            # Always include the endpoint (t=step_seconds)
+            _sub_fractions = np.linspace(0.0, 1.0, _n_sub + 1)[1:]  # skip t=0 (pre-step)
 
-            # Batch query: returns a list of lists — one per satellite — in one call
-            hit_lists = _deb_tree.query_ball_point(_sat_pos, r=CONJUNCTION_THRESHOLD_KM)
+            # Pre-propagate dense solutions if step is large enough to warrant sub-sampling
+            if _n_sub > 1:
+                _sat_dense_ids, _sat_dense_sol = self.propagator.propagate_dense_batch(
+                    sat_states, step_seconds
+                )
+                _deb_dense_ids, _deb_dense_sol = self.propagator.propagate_dense_batch(
+                    deb_states, step_seconds
+                )
+                _sat_id_to_idx = {sid: i for i, sid in enumerate(_sat_dense_ids)}
+                _deb_id_to_idx = {did: i for i, did in enumerate(_deb_dense_ids)}
 
-            for s_idx, neighbor_indices in enumerate(hit_lists):
-                if not neighbor_indices:
-                    continue
-                sat = self.satellites[_sat_ids[s_idx]]
-                for deb_idx in neighbor_indices:
-                    # KDTree guarantees dist <= CONJUNCTION_THRESHOLD_KM for all
-                    # returned indices — redundant Euclidean recheck removed.
-                    deb  = self.debris[_deb_ids[deb_idx]]
-                    dist = float(np.linalg.norm(sat.position - deb.position))
-                    collisions_detected += 1
-                    logger.critical(
-                        "COLLISION | %s × %s | Time:%s | Distance:%.4f km",
-                        sat.id, deb.id, target_time.isoformat(), dist,
-                    )
-                    self.collision_log.append({
-                        "satellite_id": sat.id,
-                        "debris_id":    deb.id,
-                        "time":         target_time.isoformat(),
-                        "distance_km":  dist,
-                    })
+            # Track already-logged collision pairs to avoid double-counting
+            _logged_pairs: set[tuple[str, str]] = set()
+
+            for frac in _sub_fractions:
+                t_sample = step_seconds * float(frac)
+                sample_time = old_time + timedelta(seconds=t_sample)
+
+                if _n_sub > 1 and frac < 1.0:
+                    # Evaluate dense polynomial at intermediate t
+                    _all_sat_states = _sat_dense_sol(t_sample)  # (S, 6)
+                    _all_deb_states = _deb_dense_sol(t_sample)  # (D, 6)
+                    _sat_pos = _all_sat_states[:, :3]
+                    _deb_pos = _all_deb_states[:, :3]
+                else:
+                    # Endpoint: use already-propagated final positions
+                    _sat_pos = np.array([self.satellites[sid].position for sid in _sat_ids])
+                    _deb_pos = np.array([self.debris[did].position for did in _deb_ids])
+
+                _deb_tree = _KDTree(_deb_pos)
+                hit_lists = _deb_tree.query_ball_point(_sat_pos, r=CONJUNCTION_THRESHOLD_KM)
+
+                for s_idx, neighbor_indices in enumerate(hit_lists):
+                    if not neighbor_indices:
+                        continue
+                    s_id = _sat_ids[s_idx] if frac == 1.0 or _n_sub <= 1 else _sat_dense_ids[s_idx]
+                    for deb_idx in neighbor_indices:
+                        d_id = _deb_ids[deb_idx] if frac == 1.0 or _n_sub <= 1 else _deb_dense_ids[deb_idx]
+                        pair_key = (s_id, d_id)
+                        if pair_key in _logged_pairs:
+                            continue
+                        _logged_pairs.add(pair_key)
+                        dist = float(np.linalg.norm(_sat_pos[s_idx] - _deb_pos[deb_idx]))
+                        collisions_detected += 1
+                        logger.critical(
+                            "COLLISION | %s × %s | Time:%s | Distance:%.4f km",
+                            s_id, d_id, sample_time.isoformat(), dist,
+                        )
+                        self.collision_log.append({
+                            "satellite_id": s_id,
+                            "debris_id":    d_id,
+                            "time":         sample_time.isoformat(),
+                            "distance_km":  dist,
+                        })
 
         # ── Step 4: Station-keeping status ─────────────────────────────────────
         for sat in self.satellites.values():
@@ -444,12 +498,16 @@ class SimulationEngine:
                     if not has_los_at(bt):
                         earliest = target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
                         test_bt = bt
+                        found_los = False
                         while test_bt >= earliest:
                             if has_los_at(test_bt):
                                 burn["burnTime"] = test_bt.isoformat()
                                 bt = test_bt
+                                found_los = True
                                 break
                             test_bt -= timedelta(seconds=60)
+                        if not found_los:
+                            burn["_skip"] = True
 
             # Cooldown enforcement: auto-planned burns must respect the same
             # 600 s thruster cooldown as manually-scheduled burns.  Compute the
@@ -466,6 +524,8 @@ class SimulationEngine:
 
             validated_burns: list[dict] = []
             for burn in burns:
+                if burn.get("_skip"):
+                    continue
                 bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
                 if effective_last_auto is not None:
                     cooldown_gap = (bt - effective_last_auto).total_seconds()
@@ -483,11 +543,27 @@ class SimulationEngine:
         for sat_id, sat in self.satellites.items():
             if self.fuel_tracker.is_eol(sat_id) and sat.status != "EOL":
                 sat.status = "EOL"
+                # Queue a small retrograde graveyard burn to raise orbit
+                remaining_fuel = self.fuel_tracker.get_fuel(sat_id)
+                if remaining_fuel > 0.1 and not sat.maneuver_queue:
+                    graveyard_time = target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
+                    # Small retrograde T-axis burn (~0.5 m/s) to raise altitude
+                    dv_rtn = np.array([0.0, -0.0005, 0.0])  # km/s retrograde
+                    dv_eci = self.planner.rtn_to_eci(sat.position, sat.velocity, dv_rtn)
+                    sat.maneuver_queue.append({
+                        "burn_id": f"GRAVEYARD_{sat_id}",
+                        "burnTime": graveyard_time.isoformat(),
+                        "deltaV_vector": {
+                            "x": float(dv_eci[0]),
+                            "y": float(dv_eci[1]),
+                            "z": float(dv_eci[2]),
+                        },
+                    })
                 logger.warning(
                     "EOL | %s | Fuel=%.2f kg ≤ threshold (%.1f kg) | "
                     "Graveyard maneuver scheduled",
                     sat_id,
-                    self.fuel_tracker.get_fuel(sat_id),
+                    remaining_fuel,
                     EOL_FUEL_THRESHOLD_KG,
                 )
 

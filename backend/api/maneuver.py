@@ -31,7 +31,10 @@ async def schedule_maneuver(
     async with request.app.state.engine_lock:
         result = engine.schedule_maneuver(
             satellite_id=payload.satelliteId,
-            sequence=[cmd.model_dump() for cmd in payload.maneuver_sequence],
+            sequence=[
+                {**cmd.model_dump(), "burnTime": cmd.burnTime.isoformat()}
+                for cmd in payload.maneuver_sequence
+            ],
         )
     logger.info(
         "MANEUVER | %s | Status: %s",

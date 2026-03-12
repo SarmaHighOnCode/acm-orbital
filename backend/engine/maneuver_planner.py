@@ -238,7 +238,7 @@ class ManeuverPlanner:
 
         if last_burn_time is not None:
             cooldown_elapsed = (burn_time - last_burn_time).total_seconds()
-            if cooldown_elapsed <= THRUSTER_COOLDOWN_S:
+            if cooldown_elapsed < THRUSTER_COOLDOWN_S:
                 return False, f"Violates {THRUSTER_COOLDOWN_S}s thruster cooldown"
 
         if not has_los:
