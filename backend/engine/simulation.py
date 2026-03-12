@@ -543,22 +543,44 @@ class SimulationEngine:
         for sat_id, sat in self.satellites.items():
             if self.fuel_tracker.is_eol(sat_id) and sat.status != "EOL":
                 sat.status = "EOL"
-                # Queue a small retrograde graveyard burn to raise orbit
+                # Queue a small retrograde graveyard burn to lower orbit (de-orbit)
                 remaining_fuel = self.fuel_tracker.get_fuel(sat_id)
                 if remaining_fuel > 0.1 and not sat.maneuver_queue:
-                    graveyard_time = target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
-                    # Small retrograde T-axis burn (~0.5 m/s) to raise altitude
-                    dv_rtn = np.array([0.0, -0.0005, 0.0])  # km/s retrograde
-                    dv_eci = self.planner.rtn_to_eci(sat.position, sat.velocity, dv_rtn)
-                    sat.maneuver_queue.append({
-                        "burn_id": f"GRAVEYARD_{sat_id}",
-                        "burnTime": graveyard_time.isoformat(),
-                        "deltaV_vector": {
-                            "x": float(dv_eci[0]),
-                            "y": float(dv_eci[1]),
-                            "z": float(dv_eci[2]),
-                        },
-                    })
+                    earliest_burn = target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
+                    # Propagate dense over ~1 orbit to find a LOS window (PRD §4.4)
+                    _EOL_SEARCH_S = 6000
+                    dense_eol = self.propagator.propagate_dense(sat.state_vector, _EOL_SEARCH_S)
+                    graveyard_time: datetime | None = None
+                    test_t = earliest_burn
+                    while (test_t - target_time).total_seconds() <= _EOL_SEARCH_S:
+                        dt_check = (test_t - target_time).total_seconds()
+                        pos_check = dense_eol(dt_check)[:3]
+                        if self.gs_network.check_line_of_sight(pos_check, test_t):
+                            graveyard_time = test_t
+                            break
+                        test_t += timedelta(seconds=60)
+
+                    if graveyard_time is not None:
+                        # Compute RTN→ECI at burn epoch (not planning epoch)
+                        dt_burn = (graveyard_time - target_time).total_seconds()
+                        sv_at_burn = dense_eol(dt_burn)
+                        dv_rtn = np.array([0.0, -0.0005, 0.0])  # km/s retrograde
+                        dv_eci = self.planner.rtn_to_eci(sv_at_burn[:3], sv_at_burn[3:], dv_rtn)
+                        sat.maneuver_queue.append({
+                            "burn_id": f"GRAVEYARD_{sat_id}",
+                            "burnTime": graveyard_time.isoformat(),
+                            "deltaV_vector": {
+                                "x": float(dv_eci[0]),
+                                "y": float(dv_eci[1]),
+                                "z": float(dv_eci[2]),
+                            },
+                        })
+                    else:
+                        logger.warning(
+                            "EOL | %s | No LOS window in %.0fs horizon; "
+                            "graveyard burn deferred to next step",
+                            sat_id, _EOL_SEARCH_S,
+                        )
                 logger.warning(
                     "EOL | %s | Fuel=%.2f kg ≤ threshold (%.1f kg) | "
                     "Graveyard maneuver scheduled",
