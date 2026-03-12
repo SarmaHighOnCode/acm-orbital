@@ -8,7 +8,17 @@
       "Bash(python -m pytest tests/test_physics_engine.py -v --tb=short)",
       "Bash(python benchmark.py)",
       "Bash(python -m pytest tests/test_physics_engine.py -v --tb=short -q)",
-      "Bash(python -m pytest tests/test_physics_engine.py -q)"
+      "Bash(python -m pytest tests/test_physics_engine.py -q)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''generate_telemetry.py''\\).read\\(\\)\\); print\\(''generate_telemetry.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''tests/test_live_flood.py''\\).read\\(\\)\\); print\\(''test_live_flood.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''generate_telemetry.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''generate_telemetry.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''tests/test_live_flood.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''test_live_flood.py: OK''\\)\")",
+      "Bash(python -m pytest tests/test_live_flood.py -v --tb=short -m \"not slow\" -x)",
+      "Bash(python -m pytest tests/test_live_flood.py -v --tb=short -m \"not slow\")",
+      "Bash(python -m pytest tests/test_live_flood.py -v --tb=short -m \"slow\" -s)",
+      "Bash(python -m pytest tests/test_live_flood.py -v --tb=short -s)",
+      "Bash(python -m pytest tests/test_edge_cases.py -v --tb=short -s)",
+      "Bash(python -m pytest tests/test_edge_cases.py -v)"
     ]
   }
 }
