@@ -3,11 +3,19 @@
  * Owner: Dev 3 (Frontend)
  *
  * Uses Canvas 2D API (NOT SVG, NOT DOM divs) for performance.
- * Renders: satellite markers, 90-min trails, day/night terminator.
+ * Renders: satellite markers, grid overlay, status legend.
  */
 
 import React, { useRef, useEffect } from 'react';
 import useStore from '../store';
+import { geoToMercator } from '../utils/coordinates';
+
+const STATUS_COLORS_CSS = {
+  NOMINAL: '#00ff88',
+  EVADING: '#ffaa00',
+  RECOVERING: '#3b82f6',
+  EOL: '#ff3355',
+};
 
 export default function GroundTrack() {
   const canvasRef = useRef(null);
@@ -43,12 +51,52 @@ export default function GroundTrack() {
       ctx.stroke();
     }
 
-    // Placeholder label
-    ctx.fillStyle = '#6b7280';
-    ctx.font = '12px Inter, sans-serif';
-    ctx.fillText('Ground Track — awaiting satellite data', 12, 20);
+    // Axis labels
+    ctx.fillStyle = '#374151';
+    ctx.font = '9px Inter, monospace';
+    ctx.textAlign = 'center';
+    for (let lon = -180; lon <= 180; lon += 60) {
+      const { x } = geoToMercator(0, lon, width, height);
+      ctx.fillText(`${lon}°`, x, height - 3);
+    }
+    ctx.textAlign = 'right';
+    for (let lat = -60; lat <= 60; lat += 30) {
+      const { y } = geoToMercator(lat, 0, width, height);
+      ctx.fillText(`${lat}°`, width - 3, y + 3);
+    }
 
-    // TODO: Dev 3 — Plot satellite positions, trails, terminator
+    if (!satellites.length) {
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('Ground Track — awaiting satellite data', 12, 20);
+      return;
+    }
+
+    // Plot satellites using lat/lon directly from API
+    for (const sat of satellites) {
+      const { x: px, y: py } = geoToMercator(sat.lat, sat.lon, width, height);
+
+      const color = STATUS_COLORS_CSS[sat.status] || '#00ff88';
+
+      // Glow
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fillStyle = color + '33';
+      ctx.fill();
+
+      // Dot
+      ctx.beginPath();
+      ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    // Header label
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Ground Track — ${satellites.length} satellites`, 12, 16);
   }, [satellites]);
 
   return (

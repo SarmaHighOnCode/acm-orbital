@@ -10,12 +10,17 @@
 import React from 'react';
 import useStore from '../store';
 
-function FuelBar({ id, fuelKg, maxFuel = 50 }) {
+function FuelBar({ id, fuelKg, maxFuel = 50, onClick, isSelected }) {
   const pct = (fuelKg / maxFuel) * 100;
   const color = pct > 50 ? '#00ff88' : pct > 20 ? '#ffaa00' : '#ff3355';
 
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div
+      className={`flex items-center gap-2 text-xs cursor-pointer rounded px-1 transition-colors ${
+        isSelected ? 'bg-space-600' : 'hover:bg-space-700/50'
+      }`}
+      onClick={() => onClick(id)}
+    >
       <span className="w-20 truncate font-mono text-gray-400">{id}</span>
       <div className="flex-1 h-2 bg-space-700 rounded-full overflow-hidden">
         <div
@@ -29,7 +34,7 @@ function FuelBar({ id, fuelKg, maxFuel = 50 }) {
 }
 
 export default function FuelHeatmap() {
-  const { satellites } = useStore();
+  const { satellites, selectedSatellite, setSelectedSatellite } = useStore();
 
   const statusCounts = satellites.reduce(
     (acc, sat) => {
@@ -57,7 +62,13 @@ export default function FuelHeatmap() {
       <div className="flex-1 overflow-y-auto space-y-1">
         {satellites.length > 0 ? (
           satellites.map((sat) => (
-            <FuelBar key={sat.id} id={sat.id} fuelKg={sat.fuel_kg} />
+            <FuelBar
+              key={sat.id}
+              id={sat.id}
+              fuelKg={sat.fuel_kg}
+              onClick={setSelectedSatellite}
+              isSelected={selectedSatellite === sat.id}
+            />
           ))
         ) : (
           <p className="text-gray-600 text-sm">Awaiting telemetry data...</p>
