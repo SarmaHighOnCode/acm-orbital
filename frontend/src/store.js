@@ -23,13 +23,19 @@ const useStore = create((set) => ({
 
   // Actions
   setSnapshot: (snapshot) =>
-    set({
+    set((state) => ({
       timestamp: snapshot.timestamp,
       satellites: snapshot.satellites || [],
       debrisCloud: snapshot.debris_cloud || [],
       activeCdmCount: snapshot.active_cdm_count || 0,
       maneuverQueueDepth: snapshot.maneuver_queue_depth || 0,
-    }),
+      // Auto-select first satellite if none selected
+      selectedSatellite:
+        state.selectedSatellite ||
+        (snapshot.satellites && snapshot.satellites.length > 0
+          ? snapshot.satellites[0].id
+          : null),
+    })),
 
   setSelectedSatellite: (id) => set({ selectedSatellite: id }),
   setLoading: (loading) => set({ isLoading: loading }),

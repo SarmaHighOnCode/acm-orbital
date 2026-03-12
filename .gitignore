@@ -41,3 +41,6 @@ Desktop.ini
 # ── Environment ──────────────────────────────────────
 .env
 .env.local
+
+# ── Generated data files ────────────────────────────
+live_telemetry.json

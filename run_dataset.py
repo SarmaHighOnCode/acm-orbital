@@ -2,6 +2,7 @@ import argparse
 import subprocess
 import time
 import os
+import urllib.error
 import urllib.request
 import json
 import traceback
@@ -60,8 +61,10 @@ def main():
 
     # Step 2: Boot Uvicorn Server in Background
     print("\n⚙️ Booting ACM-Orbital Backend Orchestrator...")
+    backend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend")
     server_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "backend.main:app", "--port", "8000"],
+        [sys.executable, "-m", "uvicorn", "main:app", "--port", "8000"],
+        cwd=backend_dir,
         stdout=subprocess.DEVNULL,  # Keep logs clean
         stderr=subprocess.DEVNULL
     )
