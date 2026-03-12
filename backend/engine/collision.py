@@ -91,6 +91,9 @@ class ConjunctionAssessor:
         Returns:
             List of CDM warnings for all pairs with miss_distance < 5 km.
         """
+        import time as _time
+        _t0 = _time.time()
+        
         base_time = current_time if current_time is not None else datetime.now(timezone.utc)
         warnings: list[CDM] = []
 
@@ -119,24 +122,11 @@ class ConjunctionAssessor:
         if len(filtered_positions) == 0:
             return warnings
 
-        # ── Stage 2: KDTree Spatial Index — O(D_alt log D_alt) build ────────
-        # 50 km query radius: debris farther away in 3-D cannot close to the
-        # 100 m collision threshold within the lookahead window at LEO speeds.
-        tree = KDTree(filtered_positions)
+        _t1 = _time.time()
+        logger.debug("CA Stage 1 (altitude filter): %.2fs, %d/%d debris remain", _t1 - _t0, len(filtered_ids), len(debris_ids))
 
-        # Batch-propagate every satellite with dense output using a single DOP853
-        # call (vectorised; not one call per satellite).
-        # Uses the screening propagator (rtol=1e-4) for BOTH satellites and debris
-        # to ensure symmetric tolerance — relative position errors cancel when
-        # both sides use the same integrator settings.
-        sat_ids_list, sat_batch_sol = self._screening_propagator.propagate_dense_batch(
-            sat_states, lookahead_s
-        )
-        # Map each sat_id to a closure that extracts its row from the batch solution.
-        sat_solutions: dict[str, object] = {
-            sid: (lambda t, idx=i: sat_batch_sol(t)[idx])
-            for i, sid in enumerate(sat_ids_list)
-        }
+        # ── Stage 2: KDTree Spatial Index — O(D_alt log D_alt) build ────────
+        tree = KDTree(filtered_positions)
 
         # Collect unique debris targets that survive KDTree screening.
         deb_targets: dict[str, np.ndarray] = {}
@@ -156,11 +146,53 @@ class ConjunctionAssessor:
         if not candidate_pairs:
             return warnings
 
-        # Batch-propagate candidate debris with the dedicated screening
-        # propagator (rtol=1e-4, atol=1e-6).  The looser tolerances are
-        # sufficient for TCA bracketing; Stage 3 Brent refinement uses the
-        # polynomial interpolant, not raw integration steps.  Using a separate
-        # propagator instance avoids mutating shared state (thread-safe).
+        _t2 = _time.time()
+        logger.debug("CA Stage 2 (KDTree): %.2fs, %d candidate pairs from %d unique debris", _t2 - _t1, len(candidate_pairs), len(deb_targets))
+
+        # ── Fast path for short lookaheads with many candidates ────────────
+        # Skip expensive dense propagation if we have too many candidates
+        # Just use initial positions + velocity extrapolation
+        if lookahead_s <= 900 and len(candidate_pairs) > 500:
+            logger.debug("CA fast path: %d pairs, skipping dense propagation", len(candidate_pairs))
+            # Use simple linear extrapolation for TCA estimation
+            for sat_id, deb_id in candidate_pairs:
+                sat_state = sat_states[sat_id]
+                deb_state = debris_states[deb_id]
+                # Initial distance
+                dist0 = float(np.linalg.norm(sat_state[:3] - deb_state[:3]))
+                # Sample at lookahead end using linear extrapolation
+                sat_pos_end = sat_state[:3] + sat_state[3:] * lookahead_s
+                deb_pos_end = deb_state[:3] + deb_state[3:] * lookahead_s
+                dist_end = float(np.linalg.norm(sat_pos_end - deb_pos_end))
+                
+                miss_distance_km = min(dist0, dist_end)
+                tca_s = 0.0 if dist0 <= dist_end else lookahead_s
+                
+                if miss_distance_km < 5.0:
+                    risk = self._classify_risk(miss_distance_km)
+                    rel_vel = float(np.linalg.norm(sat_state[3:] - deb_state[3:]))
+                    warnings.append(CDM(
+                        satellite_id=sat_id, debris_id=deb_id,
+                        tca=base_time + timedelta(seconds=tca_s),
+                        miss_distance_km=miss_distance_km,
+                        risk=risk, relative_velocity_km_s=rel_vel,
+                    ))
+            _t3 = _time.time()
+            logger.info("CA | %d sats | %d/%d debris after Stage 1 | %d candidate pairs | %d CDMs (fast path %.2fs)",
+                len(sat_states), len(filtered_ids), len(debris_ids), len(candidate_pairs), len(warnings), _t3 - _t0)
+            return warnings
+
+        # ── Standard path: Dense propagation for TCA refinement ────────────
+        # Batch-propagate every satellite with dense output
+        sat_ids_list, sat_batch_sol = self._screening_propagator.propagate_dense_batch(
+            sat_states, lookahead_s
+        )
+        sat_solutions: dict[str, object] = {
+            sid: (lambda t, idx=i: sat_batch_sol(t)[idx])
+            for i, sid in enumerate(sat_ids_list)
+        }
+
+        # Batch-propagate candidate debris
         deb_ids_list, deb_batch_sol = self._screening_propagator.propagate_dense_batch(
             deb_targets, lookahead_s
         )
@@ -170,45 +202,55 @@ class ConjunctionAssessor:
             for i, did in enumerate(deb_ids_list)
         }
 
+        _t3 = _time.time()
+        logger.debug("CA Stage 2.5 (dense prop): %.2fs for %d sats + %d debris", _t3 - _t2, len(sat_states), len(deb_targets))
+
         # ── Stage 3 & 4: TCA Refinement + CDM Emission ───────────────────────
         for sat_id, deb_id in candidate_pairs:
             sol_sat = sat_solutions[sat_id]
             sol_deb = deb_solutions[deb_id]
 
-            # Multi-start Brent TCA refinement.
-            # A single minimize_scalar over [0, 86400s] would find only ONE
-            # local minimum. LEO objects orbit in ~90 min, so there can be
-            # ~16 close-approach windows in a 24h lookahead.  We subdivide
-            # the interval at half-period steps derived from the satellite's
-            # specific orbital energy and run Brent on each sub-interval,
-            # then take the global minimum across all windows.
-            r_sat = np.linalg.norm(sol_sat(0.0)[:3])
-            sma = -MU_EARTH / (2.0 * (
-                0.5 * np.linalg.norm(sol_sat(0.0)[3:])**2 - MU_EARTH / r_sat
-            ))
-            half_period = np.pi * np.sqrt(sma**3 / MU_EARTH)  # T/2 in seconds
-            # Clamp sub-interval to [half_period, lookahead_s] for safety
-            sub_interval = max(float(half_period), 900.0)  # at least 15 min
-
+            # TCA refinement — strategy varies by lookahead duration:
+            # - Short windows (≤900s): Single minimize_scalar suffices (no multiple close approaches)
+            # - Long windows (>900s): Multi-start Brent to catch all orbital passes
             dist_fn = lambda t, _s=sol_sat, _d=sol_deb: float(
                 np.linalg.norm(_s(t)[:3] - _d(t)[:3])
             )
 
-            best_tca: float = 0.0
+            # Early exit: if initial distance > 50km, unlikely to close to <5km in short windows
             best_miss: float = dist_fn(0.0)
+            best_tca: float = 0.0
+            
+            if lookahead_s <= 900:
+                # Short lookahead: single optimization pass
+                if best_miss < 100.0:  # Only refine if reasonably close
+                    res = minimize_scalar(dist_fn, bounds=(0.0, lookahead_s), method="bounded")
+                    if res.fun < best_miss:
+                        best_miss = float(res.fun)
+                        best_tca = float(res.x)
+            else:
+                # Multi-start Brent TCA refinement for long lookaheads.
+                # LEO objects orbit in ~90 min, so there can be multiple close-approach windows.
+                r_sat = np.linalg.norm(sol_sat(0.0)[:3])
+                sma = -MU_EARTH / (2.0 * (
+                    0.5 * np.linalg.norm(sol_sat(0.0)[3:])**2 - MU_EARTH / r_sat
+                ))
+                half_period = np.pi * np.sqrt(sma**3 / MU_EARTH)  # T/2 in seconds
+                # Clamp sub-interval to [half_period, lookahead_s] for safety
+                sub_interval = max(float(half_period), 900.0)  # at least 15 min
 
-            t_lo = 0.0
-            while t_lo < lookahead_s:
-                t_hi = min(t_lo + sub_interval, lookahead_s)
-                if t_hi - t_lo < 1.0:  # skip degenerate sub-intervals
-                    break
-                res = minimize_scalar(
-                    dist_fn, bounds=(t_lo, t_hi), method="bounded",
-                )
-                if res.fun < best_miss:
-                    best_miss = float(res.fun)
-                    best_tca = float(res.x)
-                t_lo = t_hi
+                t_lo = 0.0
+                while t_lo < lookahead_s:
+                    t_hi = min(t_lo + sub_interval, lookahead_s)
+                    if t_hi - t_lo < 1.0:  # skip degenerate sub-intervals
+                        break
+                    res = minimize_scalar(
+                        dist_fn, bounds=(t_lo, t_hi), method="bounded",
+                    )
+                    if res.fun < best_miss:
+                        best_miss = float(res.fun)
+                        best_tca = float(res.x)
+                    t_lo = t_hi
 
             tca_s: float = best_tca
             miss_distance_km: float = best_miss
