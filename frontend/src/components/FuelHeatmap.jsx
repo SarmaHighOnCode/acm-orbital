@@ -7,7 +7,8 @@
  * - Delta-v cost vs collisions avoided (Recharts)
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import useStore from '../store';
 
 function FuelBar({ id, fuelKg, maxFuel = 50, onClick, isSelected }) {
@@ -33,8 +34,40 @@ function FuelBar({ id, fuelKg, maxFuel = 50, onClick, isSelected }) {
   );
 }
 
+const STATUS_COLORS = {
+  NOMINAL: '#00ff88',
+  EVADING: '#ffaa00',
+  RECOVERING: '#3b82f6',
+  EOL: '#ff3355',
+};
+
+const MAX_FUEL = 50;
+
+function CostTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-space-800 border border-space-600 rounded px-2 py-1 text-xs">
+      <p className="text-gray-300 font-mono">{d.fullId}</p>
+      <p className="text-gray-400">Consumed: {d.consumed.toFixed(2)} kg</p>
+      <p style={{ color: STATUS_COLORS[d.status] }}>{d.status}</p>
+    </div>
+  );
+}
+
 export default function FuelHeatmap() {
   const { satellites, selectedSatellite, setSelectedSatellite } = useStore();
+
+  const chartData = useMemo(
+    () =>
+      satellites.map((sat) => ({
+        shortId: sat.id.slice(-4),
+        fullId: sat.id,
+        consumed: MAX_FUEL - sat.fuel_kg,
+        status: sat.status,
+      })),
+    [satellites]
+  );
 
   const statusCounts = satellites.reduce(
     (acc, sat) => {
@@ -59,7 +92,7 @@ export default function FuelHeatmap() {
       </div>
 
       {/* Fuel bars */}
-      <div className="flex-1 overflow-y-auto space-y-1">
+      <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
         {satellites.length > 0 ? (
           satellites.map((sat) => (
             <FuelBar
@@ -74,6 +107,44 @@ export default function FuelHeatmap() {
           <p className="text-gray-600 text-sm">Awaiting telemetry data...</p>
         )}
       </div>
+
+      {/* Δv Cost Analysis chart */}
+      {satellites.length > 0 && (
+        <div className="mt-3 shrink-0">
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+            Δv Cost Analysis
+          </h3>
+          <div style={{ width: '100%', height: 140 }}>
+            <ResponsiveContainer>
+              <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
+                <XAxis
+                  dataKey="shortId"
+                  tick={{ fill: '#9ca3af', fontSize: 9 }}
+                  axisLine={{ stroke: '#4b5563' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: '#9ca3af', fontSize: 9 }}
+                  axisLine={{ stroke: '#4b5563' }}
+                  tickLine={false}
+                  label={{
+                    value: 'kg',
+                    position: 'insideTopLeft',
+                    offset: 10,
+                    style: { fill: '#6b7280', fontSize: 9 },
+                  }}
+                />
+                <Tooltip content={<CostTooltip />} cursor={false} />
+                <Bar dataKey="consumed" radius={[2, 2, 0, 0]}>
+                  {chartData.map((entry, idx) => (
+                    <Cell key={idx} fill={STATUS_COLORS[entry.status] || '#6b7280'} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
