@@ -55,8 +55,8 @@ def main():
             print("⚠️ 'live_telemetry.json' not found. We will generate it live from Celestrak...")
             subprocess.run([sys.executable, "backend/fetch_real_tle.py"], check=True)
     elif args.dataset == "worst-case":
-        if not os.path.exists("worst_case_telemetry.json"):
-            print("❌ 'worst_case_telemetry.json' not found. Please ensure it was generated.")
+        if not os.path.exists("backend/worst_case_telemetry.json"):
+            print("❌ 'backend/worst_case_telemetry.json' not found. Please ensure it was generated.")
             sys.exit(1)
 
     # Step 2: Boot Uvicorn Server in Background
@@ -85,7 +85,7 @@ def main():
     if args.dataset == "real":
         inject_telemetry("live_telemetry.json")
     elif args.dataset == "worst-case":
-        inject_telemetry("worst_case_telemetry.json")
+        inject_telemetry("backend/worst_case_telemetry.json")
 
     print("\n🛡️ System is Online & Ready for Assessment.")
     print("Press CTRL+C to safely shutdown.")
