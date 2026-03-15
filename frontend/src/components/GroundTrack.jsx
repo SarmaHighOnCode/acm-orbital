@@ -60,20 +60,20 @@ function updateTrails(satellites) {
     let trail = trailHistory.get(sat.id);
     if (!trail) { trail = []; trailHistory.set(sat.id, trail); }
     trail.push({ lat: sat.lat, lon: sat.lon });
-    if (trail.length > 2700) trail.splice(0, trail.length - 2700);
+    if (trail.length > 1500) trail.splice(0, trail.length - 1500);
   }
   for (const id of trailHistory.keys()) {
     if (!activeIds.has(id)) trailHistory.delete(id);
   }
 }
 
-function drawTrails(ctx, satellites, w, h) {
+function drawTrails(ctx, sat, w, h) {
+  if (!sat) return;
   ctx.lineWidth = 1;
-  for (const sat of satellites) {
-    const trail = trailHistory.get(sat.id);
-    if (!trail || trail.length < 2) continue;
-    const color = STATUS_COLORS_CSS[sat.status] || '#00ff88';
-    const len = trail.length;
+  const trail = trailHistory.get(sat.id);
+  if (!trail || trail.length < 2) return;
+  const color = STATUS_COLORS_CSS[sat.status] || '#00ff88';
+  const len = trail.length;
     for (let i = 1; i < len; i++) {
       const { x: x0, y: y0 } = geoToMercator(trail[i - 1].lat, trail[i - 1].lon, w, h);
       const { x: x1, y: y1 } = geoToMercator(trail[i].lat, trail[i].lon, w, h);
@@ -85,44 +85,42 @@ function drawTrails(ctx, satellites, w, h) {
       ctx.strokeStyle = color + Math.round(alpha * 255).toString(16).padStart(2, '0');
       ctx.stroke();
     }
-  }
 }
 
-function drawPredictions(ctx, satellites, w, h) {
+function drawPredictions(ctx, sat, w, h) {
+  if (!sat) return;
   const INC = 55 * DEG2RAD, PERIOD = 5400, EARTH_ROT = 0.004178, STEPS = 20;
   const DT = (90 * 60) / STEPS;
   ctx.lineWidth = 1;
-  for (const sat of satellites) {
-    const color = STATUS_COLORS_CSS[sat.status] || '#00ff88';
-    const r = parseInt(color.slice(1, 3), 16);
-    const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
-    const sinRatio = Math.max(-1, Math.min(1, Math.sin(sat.lat * DEG2RAD) / Math.sin(INC)));
-    let angle = Math.asin(sinRatio);
-    let lon = sat.lon;
-    const pts = [geoToMercator(sat.lat, sat.lon, w, h)];
-    for (let s = 1; s <= STEPS; s++) {
-      angle += (2 * Math.PI * DT) / PERIOD;
-      const predLat = Math.asin(Math.sin(INC) * Math.sin(angle)) * RAD2DEG;
-      lon -= EARTH_ROT * DT;
-      const predLon = ((lon + 180) % 360 + 360) % 360 - 180;
-      pts.push(geoToMercator(predLat, predLon, w, h));
-    }
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      if (i === 0 || Math.abs(pts[i].x - pts[i - 1].x) > w * 0.5) ctx.moveTo(pts[i].x, pts[i].y);
-      else ctx.lineTo(pts[i].x, pts[i].y);
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
+  const color = STATUS_COLORS_CSS[sat.status] || '#00ff88';
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  const sinRatio = Math.max(-1, Math.min(1, Math.sin(sat.lat * DEG2RAD) / Math.sin(INC)));
+  let angle = Math.asin(sinRatio);
+  let lon = sat.lon;
+  const pts = [geoToMercator(sat.lat, sat.lon, w, h)];
+  for (let s = 1; s <= STEPS; s++) {
+    angle += (2 * Math.PI * DT) / PERIOD;
+    const predLat = Math.asin(Math.sin(INC) * Math.sin(angle)) * RAD2DEG;
+    lon -= EARTH_ROT * DT;
+    const predLon = ((lon + 180) % 360 + 360) % 360 - 180;
+    pts.push(geoToMercator(predLat, predLon, w, h));
   }
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    if (i === 0 || Math.abs(pts[i].x - pts[i - 1].x) > w * 0.5) ctx.moveTo(pts[i].x, pts[i].y);
+    else ctx.lineTo(pts[i].x, pts[i].y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 export default function GroundTrack() {
   const canvasRef = useRef(null);
-  const { satellites, timestamp } = useStore();
+  const { satellites, timestamp, selectedSatellite } = useStore();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -179,26 +177,39 @@ export default function GroundTrack() {
       return;
     }
 
+    const selSat = selectedSatellite
+      ? satellites.find(s => s.id === selectedSatellite) : null;
+
     updateTrails(satellites);
-    drawTrails(ctx, satellites, width, height);
-    drawPredictions(ctx, satellites, width, height);
+    drawTrails(ctx, selSat, width, height);
+    drawPredictions(ctx, selSat, width, height);
 
-    // Plot satellites using lat/lon directly from API
+    // Plot all satellites
     for (const sat of satellites) {
+      if (selSat && sat.id === selSat.id) continue;
       const { x: px, y: py } = geoToMercator(sat.lat, sat.lon, width, height);
-
       const color = STATUS_COLORS_CSS[sat.status] || '#00ff88';
-
-      // Glow
       ctx.beginPath();
-      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
       ctx.fillStyle = color + '33';
       ctx.fill();
-
-      // Dot
       ctx.beginPath();
-      ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+      ctx.arc(px, py, 1, 0, Math.PI * 2);
       ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    // Highlight selected satellite
+    if (selSat) {
+      const { x: px, y: py } = geoToMercator(selSat.lat, selSat.lon, width, height);
+      const color = STATUS_COLORS_CSS[selSat.status] || '#00ff88';
+      ctx.beginPath();
+      ctx.arc(px, py, 6, 0, Math.PI * 2);
+      ctx.fillStyle = color + '55';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(px, py, 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
       ctx.fill();
     }
 
@@ -207,7 +218,7 @@ export default function GroundTrack() {
     ctx.font = '11px Inter, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(`Ground Track — ${satellites.length} satellites`, 12, 16);
-  }, [satellites, timestamp]);
+  }, [satellites, timestamp, selectedSatellite]);
 
   return (
     <canvas
