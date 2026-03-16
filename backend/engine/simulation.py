@@ -19,6 +19,7 @@ Tick sequence (PRD §4.7):
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -106,6 +107,10 @@ class SimulationEngine:
         self.active_cdms: list[CDM] = []
         self.collision_log: list[dict] = []
         self.maneuver_log: list[dict] = []
+        self.collision_count: int = 0
+
+        # Uptime tracking — seconds each satellite spends outside station-keeping box
+        self.time_outside_box: dict[str, float] = {}
 
         # Subsystem components
         self.propagator    = OrbitalPropagator(rtol=RTOL, atol=ATOL)
@@ -305,7 +310,7 @@ class SimulationEngine:
                     "validation": {
                         "ground_station_los": has_los,
                         "sufficient_fuel": False,
-                        "projected_mass_remaining_kg": float(current_mass),
+                        "projected_mass_remaining_kg": float(M_DRY + simulated_fuel),
                     },
                 }
 
@@ -434,7 +439,7 @@ class SimulationEngine:
                     # same tick may have updated last_burn_time.
                     if sat.last_burn_time is not None:
                         cooldown_gap = (burn_time - sat.last_burn_time).total_seconds()
-                        if cooldown_gap <= THRUSTER_COOLDOWN_S:
+                        if cooldown_gap < THRUSTER_COOLDOWN_S:
                             logger.warning(
                                 "MANEUVER | %s | %s | SKIPPED — cooldown violation at execution (%.0fs < %.0fs)",
                                 sat_id, burn.get("burn_id", "BURN"),
@@ -443,22 +448,26 @@ class SimulationEngine:
                             continue
 
                     sat.velocity      = sat.velocity + dv_vec
+                    fuel_before = self.fuel_tracker.get_fuel(sat_id)
                     self.fuel_tracker.consume(sat_id, dv_mag_ms)
                     sat.fuel_kg        = self.fuel_tracker.get_fuel(sat_id)
                     sat.last_burn_time = burn_time
                     sat.status         = "EVADING"
                     maneuvers_executed += 1
 
-                    logger.info(
-                        "MANEUVER | %s | %s | ΔV=%.4f m/s | Fuel remaining: %.2f kg",
-                        sat_id, burn.get("burn_id", "BURN"), dv_mag_ms, sat.fuel_kg,
-                    )
-                    self.maneuver_log.append({
+                    # Structured JSON log (Code Quality)
+                    log_entry = {
+                        "event": "MANEUVER_EXECUTED",
+                        "timestamp": burn_time.isoformat(),
                         "satellite_id": sat_id,
                         "burn_id": burn.get("burn_id", "BURN"),
-                        "time": burn_time.isoformat(),
-                        "delta_v_ms": dv_mag_ms,
-                    })
+                        "delta_v_magnitude_ms": round(dv_mag_ms, 4),
+                        "fuel_consumed_kg": round(fuel_before - sat.fuel_kg, 3),
+                        "fuel_remaining_kg": round(sat.fuel_kg, 2),
+                        "mass_after_kg": round(M_DRY + sat.fuel_kg, 2),
+                    }
+                    logger.info("MANEUVER | %s", json.dumps(log_entry))
+                    self.maneuver_log.append(log_entry)
                 else:
                     remaining_queue.append(burn)
             sat.maneuver_queue = remaining_queue
@@ -524,24 +533,30 @@ class SimulationEngine:
                         _logged_pairs.add(pair_key)
                         dist = float(np.linalg.norm(_sat_pos[s_idx] - _deb_pos[deb_idx]))
                         collisions_detected += 1
-                        logger.critical(
-                            "COLLISION | %s × %s | Time:%s | Distance:%.4f km",
-                            s_id, d_id, sample_time.isoformat(), dist,
-                        )
-                        self.collision_log.append({
+                        self.collision_count += 1
+                        collision_entry = {
+                            "event": "COLLISION",
+                            "timestamp": sample_time.isoformat(),
                             "satellite_id": s_id,
                             "debris_id":    d_id,
-                            "time":         sample_time.isoformat(),
-                            "distance_km":  dist,
-                        })
+                            "distance_km":  round(dist, 4),
+                        }
+                        logger.critical("COLLISION | %s", json.dumps(collision_entry))
+                        self.collision_log.append(collision_entry)
 
-        # ── Step 4: Station-keeping status ─────────────────────────────────────
+        # ── Step 4: Station-keeping status + Uptime tracking ─────────────────
         for sat in self.satellites.values():
             if sat.status == "EOL":
                 continue   # terminal state — never overwrite
             
             slot_offset = float(np.linalg.norm(sat.position - sat.nominal_state[:3]))
             in_slot     = slot_offset <= STATION_KEEPING_RADIUS_KM
+            
+            # Uptime tracking: accumulate seconds outside station-keeping box
+            if not in_slot:
+                self.time_outside_box[sat.id] = (
+                    self.time_outside_box.get(sat.id, 0.0) + step_seconds
+                )
             
             # Transition logic (PRD §4.7)
             if sat.status == "EVADING" and sat.maneuver_queue:
@@ -814,8 +829,8 @@ class SimulationEngine:
         minimise serialisation payload size for 10 000+ objects.
 
         Returns:
-            Snapshot dict with satellites, debris_cloud, CDM count, and
-            maneuver queue depth.
+            Snapshot dict with satellites, debris_cloud, CDMs, maneuver log,
+            collision count, and uptime scores.
         """
         satellites = []
         if self.satellites:
@@ -825,6 +840,7 @@ class SimulationEngine:
             
             for i, sid in enumerate(sat_ids):
                 sat = self.satellites[sid]
+                t_out = self.time_outside_box.get(sid, 0.0)
                 satellites.append({
                     "id":       sat.id,
                     "lat":      round(float(sat_lla[i, 0]), 3),
@@ -832,6 +848,9 @@ class SimulationEngine:
                     "alt_km":   round(float(sat_lla[i, 2]), 1),
                     "fuel_kg":  max(0.0, round(self.fuel_tracker.get_fuel(sat.id), 2)),
                     "status":   sat.status,
+                    "uptime_score": round(float(np.exp(-0.001 * t_out)), 4),
+                    "time_outside_box_s": round(t_out, 1),
+                    "queued_burns": len(sat.maneuver_queue),
                 })
 
         debris_cloud = []
@@ -849,10 +868,26 @@ class SimulationEngine:
 
         total_queued = sum(len(s.maneuver_queue) for s in self.satellites.values())
 
+        # CDM summaries for frontend bullseye + timeline
+        cdm_list = []
+        for cdm in self.active_cdms:
+            tca_iso = cdm.tca.isoformat() if hasattr(cdm.tca, 'isoformat') else str(cdm.tca)
+            cdm_list.append({
+                "satellite_id": cdm.satellite_id,
+                "debris_id": cdm.debris_id,
+                "tca": tca_iso,
+                "miss_distance_km": round(cdm.miss_distance_km, 4),
+                "risk": cdm.risk,
+                "relative_velocity_km_s": round(cdm.relative_velocity_km_s, 3),
+            })
+
         return {
             "timestamp":           self.sim_time.isoformat(),
             "satellites":          satellites,
             "debris_cloud":        debris_cloud,
             "active_cdm_count":    len(self.active_cdms),
             "maneuver_queue_depth": total_queued,
+            "cdms":                cdm_list,
+            "maneuver_log":        self.maneuver_log[-50:],  # Last 50 events
+            "collision_count":     self.collision_count,
         }
