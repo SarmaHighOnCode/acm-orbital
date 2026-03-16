@@ -55,6 +55,22 @@ class FuelTracker:
         """
         self._fuel[sat_id] = fuel_kg
 
+    def estimate_fuel_consumption(self, sat_id: str, delta_v_ms: float) -> float:
+        """Estimate propellant required for a burn without consuming it.
+
+        Args:
+            sat_id:      Satellite identifier.
+            delta_v_ms:  Delta-v magnitude in m/s.
+
+        Returns:
+            Propellant mass required (kg).
+        """
+        current_fuel: float = self._fuel.get(sat_id, 0.0)
+        current_mass: float = M_DRY + current_fuel
+        exponent: float = -abs(delta_v_ms) / (ISP * G0)
+        fuel_needed: float = current_mass * (1.0 - np.exp(exponent))
+        return float(fuel_needed)
+
     def consume(self, sat_id: str, delta_v_ms: float) -> float:
         """Apply the Tsiolkovsky equation and deduct fuel for a completed burn.
 
@@ -82,11 +98,7 @@ class FuelTracker:
             delta_v_ms = MAX_DV_PER_BURN
 
         current_fuel: float = self._fuel.get(sat_id, 0.0)
-        current_mass: float = M_DRY + current_fuel   # wet mass at start of burn (kg)
-
-        # Tsiolkovsky depletion: Δm = m × (1 − e^(−|Δv| / (Isp·g₀)))  (§4.3, eq. 1)
-        exponent: float = -abs(delta_v_ms) / (ISP * G0)
-        fuel_consumed: float = current_mass * (1.0 - np.exp(exponent))
+        fuel_consumed = self.estimate_fuel_consumption(sat_id, delta_v_ms)
 
         # Clamp to available propellant — cannot consume more than we have
         fuel_consumed = min(fuel_consumed, current_fuel)
@@ -136,7 +148,5 @@ class FuelTracker:
         Returns:
             True if current fuel ≥ required fuel for the burn.
         """
-        current_mass: float = self.get_current_mass(sat_id)
-        exponent: float = -abs(delta_v_ms) / (ISP * G0)
-        fuel_needed: float = current_mass * (1.0 - np.exp(exponent))
+        fuel_needed = self.estimate_fuel_consumption(sat_id, delta_v_ms)
         return self.get_fuel(sat_id) >= fuel_needed
