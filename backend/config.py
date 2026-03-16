@@ -20,6 +20,8 @@ M_DRY: float = 500.0                   # kg — satellite dry mass (empty)
 M_FUEL_INIT: float = 50.0             # kg — initial propellant mass per satellite
 M_WET_INIT: float = 550.0             # kg — initial wet mass (M_DRY + M_FUEL_INIT)
 MAX_DV_PER_BURN: float = 15.0         # m/s — maximum delta-v per single burn command
+RTOL: float = 1e-10                  # Relative tolerance for DOP853
+ATOL: float = 1e-12                  # Absolute tolerance for DOP853
 
 # ── Operational Constraints ──────────────────────────────────────────────
 THRUSTER_COOLDOWN_S: float = 600.0     # seconds — mandatory rest between burns

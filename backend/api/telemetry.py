@@ -29,9 +29,10 @@ async def ingest_telemetry(
     """Ingest telemetry data for satellites and debris."""
     engine = _get_engine(request)
     async with request.app.state.engine_lock:
+        # Pass payload.objects directly to avoid redundant serialization of 10k objects
         result = engine.ingest_telemetry(
             timestamp=payload.timestamp.isoformat(),
-            objects=[obj.model_dump() for obj in payload.objects],
+            objects=payload.objects,
         )
     logger.info(
         "TELEMETRY | Ingested %d objects | CDMs active: %d",

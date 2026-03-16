@@ -71,11 +71,16 @@ class GroundStationNetwork:
             np.sin(lat)
         ])
 
-        # 2. Rotate GS ECEF to ECI (Simplification: Lon grows with GMST)
-        # We use a sidereal day (86164.0905 s) to prevent 1 degree/day drift.
-        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc) if timestamp.tzinfo else datetime(1970, 1, 1)
-        seconds_from_epoch = (timestamp - epoch).total_seconds()
-        rotation_angle = (seconds_from_epoch % 86164.0905) * (2 * np.pi / 86164.0905)
+        # 2. Rotate GS ECEF to ECI using Greenwich Mean Sidereal Time (GMST)
+        # J2000.0 Epoch: 2000-01-01 12:00:00 UTC (JD 2451545.0)
+        j2000_epoch = datetime(2000, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        dt_seconds = (timestamp - j2000_epoch).total_seconds()
+        
+        # Standard GMST formula: GMST_0 + rate * dt
+        # GMST at J2000 noon is approx 18.697 hours = 280.46 degrees
+        # Earth rotation rate is approx 360.985 degrees per day
+        gmst_deg = 280.46061837 + 360.98564736629 * (dt_seconds / 86400.0)
+        rotation_angle = np.radians(gmst_deg % 360.0)
         
         c, s = np.cos(rotation_angle), np.sin(rotation_angle)
         rot_matrix = np.array([

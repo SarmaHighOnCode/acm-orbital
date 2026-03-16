@@ -132,14 +132,30 @@ class ConjunctionAssessor:
         deb_targets: dict[str, np.ndarray] = {}
         candidate_pairs: list[tuple[str, str]] = []
 
+        # Pre-compute satellite apo/peri for per-pair filtering
+        sat_rp_dict = {sid: sat_rp[i] for i, sid in enumerate(sat_states.keys())}
+        sat_ra_dict = {sid: sat_ra[i] for i, sid in enumerate(sat_states.keys())}
+        deb_rp_dict = {did: deb_rp[i] for i, did in enumerate(debris_states.keys())}
+        deb_ra_dict = {did: deb_ra[i] for i, did in enumerate(debris_states.keys())}
+
+        # Scale search radius based on lookahead to catch high-velocity (15 km/s) 
+        # head-on pairs. Minimum 2000 km to handle short lookaheads.
+        kdtree_radius = max(2000.0, 15.0 * lookahead_s)
+
         for sat_id, sat_state in sat_states.items():
-            # O(log D_alt + k_i) query per satellite — never a Python loop over D
-            # 200 km radius (expanded from 50 km) eliminates the false-negative
-            # blind spot for crossing-orbit pairs that start >50 km apart but
-            # converge to <100 m within the TCA refinement window.
-            neighbor_indices = tree.query_ball_point(sat_state[:3], r=200.0)
+            # query_ball_point eliminates debris far from initial satellite position
+            neighbor_indices = tree.query_ball_point(sat_state[:3], r=kdtree_radius)
+            
+            s_rp = sat_rp_dict[sat_id] - 5.0 # buffer for collision threshold
+            s_ra = sat_ra_dict[sat_id] + 5.0
+            
             for idx in neighbor_indices:
                 deb_id = filtered_ids[idx]
+                
+                # Per-pair orbital shell filter: skip if orbits don't overlap in altitude
+                if deb_rp_dict[deb_id] > s_ra or deb_ra_dict[deb_id] < s_rp:
+                    continue
+                    
                 deb_targets[deb_id] = debris_states[deb_id]
                 candidate_pairs.append((sat_id, deb_id))
 
@@ -147,137 +163,94 @@ class ConjunctionAssessor:
             return warnings
 
         _t2 = _time.time()
-        logger.debug("CA Stage 2 (KDTree): %.2fs, %d candidate pairs from %d unique debris", _t2 - _t1, len(candidate_pairs), len(deb_targets))
-
-        # ── Fast path for short lookaheads with many candidates ────────────
-        # Skip expensive dense propagation if we have too many candidates
-        # Just use initial positions + velocity extrapolation
-        if lookahead_s <= 900 and len(candidate_pairs) > 500:
-            logger.debug("CA fast path: %d pairs, skipping dense propagation", len(candidate_pairs))
-            # Use simple linear extrapolation for TCA estimation
-            for sat_id, deb_id in candidate_pairs:
-                sat_state = sat_states[sat_id]
-                deb_state = debris_states[deb_id]
-                # Initial distance
-                dist0 = float(np.linalg.norm(sat_state[:3] - deb_state[:3]))
-                # Sample at lookahead end using linear extrapolation
-                sat_pos_end = sat_state[:3] + sat_state[3:] * lookahead_s
-                deb_pos_end = deb_state[:3] + deb_state[3:] * lookahead_s
-                dist_end = float(np.linalg.norm(sat_pos_end - deb_pos_end))
-                
-                miss_distance_km = min(dist0, dist_end)
-                tca_s = 0.0 if dist0 <= dist_end else lookahead_s
-                
-                if miss_distance_km < 5.0:
-                    risk = self._classify_risk(miss_distance_km)
-                    rel_vel = float(np.linalg.norm(sat_state[3:] - deb_state[3:]))
-                    warnings.append(CDM(
-                        satellite_id=sat_id, debris_id=deb_id,
-                        tca=base_time + timedelta(seconds=tca_s),
-                        miss_distance_km=miss_distance_km,
-                        risk=risk, relative_velocity_km_s=rel_vel,
-                    ))
-            _t3 = _time.time()
-            logger.info("CA | %d sats | %d/%d debris after Stage 1 | %d candidate pairs | %d CDMs (fast path %.2fs)",
-                len(sat_states), len(filtered_ids), len(debris_ids), len(candidate_pairs), len(warnings), _t3 - _t0)
-            return warnings
+        logger.debug("CA Stage 2 (KDTree + Pair Filter): %.2fs, %d candidate pairs from %d unique debris", _t2 - _t1, len(candidate_pairs), len(deb_targets))
 
         # ── Standard path: Dense propagation for TCA refinement ────────────
         # Batch-propagate every satellite with dense output
         sat_ids_list, sat_batch_sol = self._screening_propagator.propagate_dense_batch(
             sat_states, lookahead_s
         )
-        sat_solutions: dict[str, object] = {
-            sid: (lambda t, idx=i: sat_batch_sol(t)[idx])
-            for i, sid in enumerate(sat_ids_list)
-        }
+        # Create indexed access for vectorized evaluation
+        sat_id_to_idx = {sid: i for i, sid in enumerate(sat_ids_list)}
 
         # Batch-propagate candidate debris
         deb_ids_list, deb_batch_sol = self._screening_propagator.propagate_dense_batch(
             deb_targets, lookahead_s
         )
-
-        deb_solutions: dict[str, object] = {
-            did: (lambda t, idx=i: deb_batch_sol(t)[idx])
-            for i, did in enumerate(deb_ids_list)
-        }
+        deb_id_to_idx = {did: i for i, did in enumerate(deb_ids_list)}
 
         _t3 = _time.time()
         logger.debug("CA Stage 2.5 (dense prop): %.2fs for %d sats + %d debris", _t3 - _t2, len(sat_states), len(deb_targets))
 
-        # ── Stage 3 & 4: TCA Refinement + CDM Emission ───────────────────────
-        for sat_id, deb_id in candidate_pairs:
-            sol_sat = sat_solutions[sat_id]
-            sol_deb = deb_solutions[deb_id]
-
-            # TCA refinement — strategy varies by lookahead duration:
-            # - Short windows (≤900s): Single minimize_scalar suffices (no multiple close approaches)
-            # - Long windows (>900s): Multi-start Brent to catch all orbital passes
-            dist_fn = lambda t, _s=sol_sat, _d=sol_deb: float(
-                np.linalg.norm(_s(t)[:3] - _d(t)[:3])
-            )
-
-            # Early exit: if initial distance > 50km, unlikely to close to <5km in short windows
-            best_miss: float = dist_fn(0.0)
-            best_tca: float = 0.0
+        # ── Stage 3: Vectorized Coarse Sweep ─────────────────────────────────
+        # Evaluate distances on a coarse grid (every 600s) for ALL candidate pairs at once.
+        # This keeps the hot path in NumPy and avoids millions of Python loop iterations.
+        grid_points = np.linspace(0.0, lookahead_s, int(lookahead_s / 600) + 1)
+        
+        # Pre-evaluate all states on the grid
+        all_sat_grid = sat_batch_sol(grid_points) # (S, 6, T)
+        all_deb_grid = deb_batch_sol(grid_points) # (D, 6, T)
+        
+        # Map pairs to indices
+        pair_sat_indices = np.array([sat_id_to_idx[sid] for sid, did in candidate_pairs])
+        pair_deb_indices = np.array([deb_id_to_idx[did] for sid, did in candidate_pairs])
+        
+        # Batch evaluation of distances across the grid for all candidate pairs
+        # pair_sat_pos: (K, 3, T) where K is number of candidate pairs
+        pair_sat_pos = all_sat_grid[pair_sat_indices, :3, :]
+        pair_deb_pos = all_deb_grid[pair_deb_indices, :3, :]
+        
+        # dist_sq_grid: (K, T)
+        dist_sq_grid = np.sum((pair_sat_pos - pair_deb_pos)**2, axis=1)
+        dist_grid = np.sqrt(dist_sq_grid)
+        
+        # Identify pairs/windows that drop below 50km
+        threatening_mask = np.any(dist_grid < 50.0, axis=1)
+        
+        # ── Stage 4: Refined TCA + CDM Emission ──────────────────────────────
+        threatening_indices = np.where(threatening_mask)[0]
+        
+        for k_idx in threatening_indices:
+            sat_id, deb_id = candidate_pairs[k_idx]
             
-            if lookahead_s <= 900:
-                # Short lookahead: single optimization pass
-                if best_miss < 100.0:  # Only refine if reasonably close
-                    res = minimize_scalar(dist_fn, bounds=(0.0, lookahead_s), method="bounded")
-                    if res.fun < best_miss:
-                        best_miss = float(res.fun)
-                        best_tca = float(res.x)
-            else:
-                # Multi-start Brent TCA refinement for long lookaheads.
-                # LEO objects orbit in ~90 min, so there can be multiple close-approach windows.
-                r_sat = np.linalg.norm(sol_sat(0.0)[:3])
-                sma = -MU_EARTH / (2.0 * (
-                    0.5 * np.linalg.norm(sol_sat(0.0)[3:])**2 - MU_EARTH / r_sat
-                ))
-                half_period = np.pi * np.sqrt(sma**3 / MU_EARTH)  # T/2 in seconds
-                # Clamp sub-interval to [half_period, lookahead_s] for safety
-                sub_interval = max(float(half_period), 900.0)  # at least 15 min
+            # Refine only the specific 10-minute windows that looked risky
+            risky_windows = np.where(dist_grid[k_idx] < 50.0)[0]
+            
+            # Group adjacent risky grid points into windows
+            processed_time = -1.0
+            for w_idx in risky_windows:
+                t_center = grid_points[w_idx]
+                if t_center <= processed_time: continue
+                
+                t_lo = max(0.0, t_center - 600.0)
+                t_hi = min(lookahead_s, t_center + 600.0)
+                
+                # Brent minimization on the dense polynomial
+                def dist_fn(t, sid=sat_id, did=deb_id):
+                    s_sv = sat_batch_sol(t)[sat_id_to_idx[sid]]
+                    d_sv = deb_batch_sol(t)[deb_id_to_idx[did]]
+                    return float(np.linalg.norm(s_sv[:3] - d_sv[:3]))
 
-                t_lo = 0.0
-                while t_lo < lookahead_s:
-                    t_hi = min(t_lo + sub_interval, lookahead_s)
-                    if t_hi - t_lo < 1.0:  # skip degenerate sub-intervals
-                        break
-                    res = minimize_scalar(
-                        dist_fn, bounds=(t_lo, t_hi), method="bounded",
-                    )
-                    if res.fun < best_miss:
-                        best_miss = float(res.fun)
-                        best_tca = float(res.x)
-                    t_lo = t_hi
+                res = minimize_scalar(dist_fn, bounds=(t_lo, t_hi), method="bounded")
+                
+                if res.fun < 5.0:
+                    tca_s = float(res.x)
+                    risk = self._classify_risk(res.fun)
+                    
+                    # Sample state at exact TCA for precise relative velocity
+                    s_tca = sat_batch_sol(tca_s)[sat_id_to_idx[sat_id]]
+                    d_tca = deb_batch_sol(tca_s)[deb_id_to_idx[deb_id]]
+                    rel_vel = float(np.linalg.norm(s_tca[3:] - d_tca[3:]))
 
-            tca_s: float = best_tca
-            miss_distance_km: float = best_miss
+                    warnings.append(CDM(
+                        satellite_id=sat_id, debris_id=deb_id,
+                        tca=base_time + timedelta(seconds=tca_s),
+                        miss_distance_km=float(res.fun),
+                        risk=risk, relative_velocity_km_s=rel_vel,
+                    ))
+                
+                processed_time = t_hi
 
-            # Emit CDM only for YELLOW / RED / CRITICAL risk levels
-            if miss_distance_km < 5.0:
-                risk = self._classify_risk(miss_distance_km)
-
-                # Sample TCA-time state vectors directly from the polynomial
-                # interpolant for physically accurate relative velocity.
-                # Using planning-epoch velocities here would be wrong: at LEO
-                # speeds (7–15 km/s), the velocity direction rotates significantly
-                # between assessment time and TCA.
-                tca_sat_state: np.ndarray = sol_sat(tca_s)   # shape (6,)
-                tca_deb_state: np.ndarray = sol_deb(tca_s)   # shape (6,)
-                rel_vel_km_s = float(
-                    np.linalg.norm(tca_sat_state[3:] - tca_deb_state[3:])
-                )
-
-                warnings.append(CDM(
-                    satellite_id=sat_id,
-                    debris_id=deb_id,
-                    tca=base_time + timedelta(seconds=tca_s),
-                    miss_distance_km=miss_distance_km,
-                    risk=risk,
-                    relative_velocity_km_s=rel_vel_km_s,
-                ))
 
         logger.info(
             "CA | %d sats | %d/%d debris after Stage 1 | %d candidate pairs | %d CDMs",
@@ -287,6 +260,111 @@ class ConjunctionAssessor:
             len(candidate_pairs),
             len(warnings),
         )
+        return warnings
+
+    def assess_sat_vs_sat(
+        self,
+        sat_states: dict[str, np.ndarray],
+        lookahead_s: float = LOOKAHEAD_SECONDS,
+        current_time: datetime | None = None,
+    ) -> list[CDM]:
+        """Run a specialized conjunction assessment pass for Satellite-vs-Satellite pairs.
+
+        Optimized to avoid self-collisions (sid == did) and redundant checks (A-B vs B-A).
+
+        Args:
+            sat_states: {sat_id: state_vector [x,y,z,vx,vy,vz] km/km·s⁻¹}
+            lookahead_s: Propagation window in seconds.
+            current_time: Simulation clock epoch.
+
+        Returns:
+            List of CDM warnings for Sat-vs-Sat pairs with miss_distance < 5 km.
+        """
+        import time as _time
+        _t0 = _time.time()
+        base_time = current_time if current_time is not None else datetime.now(timezone.utc)
+        warnings: list[CDM] = []
+
+        if len(sat_states) < 2:
+            return warnings
+
+        sat_ids = list(sat_states.keys())
+        sat_positions = np.array([sv[:3] for sv in sat_states.values()])
+
+        # Build KDTree of all satellites
+        tree = KDTree(sat_positions)
+
+        # Collect unique pairs Survived KDTree screening
+        candidate_pairs: list[tuple[str, str]] = []
+        
+        # Pre-compute apo/peri for filtering
+        rp, ra = self._compute_apo_peri(np.array(list(sat_states.values())))
+        rp_dict = {sid: rp[i] for i, sid in enumerate(sat_ids)}
+        ra_dict = {sid: ra[i] for i, sid in enumerate(sat_ids)}
+
+        for i, s1_id in enumerate(sat_ids):
+            # Only check against satellites with higher index to avoid double-counting
+            neighbor_indices = tree.query_ball_point(sat_positions[i], r=2000.0)
+            
+            s1_rp = rp_dict[s1_id] - 5.0
+            s1_ra = ra_dict[s1_id] + 5.0
+            
+            for idx in neighbor_indices:
+                if idx <= i: 
+                    continue # skip self and already-checked pairs
+                
+                s2_id = sat_ids[idx]
+                if rp_dict[s2_id] > s1_ra or ra_dict[s2_id] < s1_rp:
+                    continue
+                
+                candidate_pairs.append((s1_id, s2_id))
+
+        if not candidate_pairs:
+            return warnings
+
+        # Dense propagation for candidates
+        relevant_sat_ids = sorted(list(set(sum(candidate_pairs, ()))))
+        relevant_sat_states = {sid: sat_states[sid] for sid in relevant_sat_ids}
+        
+        ids_list, batch_sol = self._screening_propagator.propagate_dense_batch(
+            relevant_sat_states, lookahead_s
+        )
+        id_to_idx = {sid: idx for idx, sid in enumerate(ids_list)}
+
+        # For Sat-vs-Sat, we can afford refined checks on ALL candidates 
+        # because the number of pairs is small (< 2500).
+        # This avoids missing high-speed intercepts that a coarse grid would miss.
+        for s1_id, s2_id in candidate_pairs:
+            def dist_fn(t, sid1=s1_id, sid2=s2_id):
+                sv1 = batch_sol(t)[id_to_idx[sid1]]
+                sv2 = batch_sol(t)[id_to_idx[sid2]]
+                return float(np.linalg.norm(sv1[:3] - sv2[:3]))
+
+            # Multi-window search to avoid local minima in highly curved orbits
+            # Split 24h into 4-hour chunks
+            _window_size = 14400.0
+            for t_start in np.arange(0.0, lookahead_s, _window_size):
+                t_end = min(t_start + _window_size, lookahead_s)
+                res = minimize_scalar(dist_fn, bounds=(t_start, t_end), method="bounded")
+                
+                if res.fun < 5.0:
+                    tca_s = float(res.x)
+                    risk = self._classify_risk(res.fun)
+                    s1_tca = batch_sol(tca_s)[id_to_idx[s1_id]]
+                    s2_tca = batch_sol(tca_s)[id_to_idx[s2_id]]
+                    rel_vel = float(np.linalg.norm(s1_tca[3:] - s2_tca[3:]))
+
+                    warnings.append(CDM(
+                        satellite_id=s1_id, debris_id=s2_id,
+                        tca=base_time + timedelta(seconds=tca_s),
+                        miss_distance_km=float(res.fun),
+                        risk=risk, relative_velocity_km_s=rel_vel,
+                    ))
+                    # Found one in this window, but there could be more in next windows (next orbits)
+                    # For safety, we keep checking other windows.
+
+        _t_end = _time.time()
+        logger.info("CA-SAT | %d pairs | %d CDMs | took %.2fs", len(candidate_pairs), len(warnings), _t_end - _t0)
         return warnings
 
     @staticmethod
