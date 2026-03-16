@@ -100,6 +100,27 @@ npm run dev
 | `GET` | `/api/visualization/snapshot` | Current state snapshot for frontend rendering |
 | `GET` | `/health` | Container health check |
 
+### 💻 cURL Examples
+
+**1. Ingest Telemetry**
+```bash
+curl -X POST "http://localhost:8000/api/telemetry" \
+     -H "Content-Type: application/json" \
+     -d '{"timestamp": "2026-03-01T12:00:00Z", "objects": [{"id": "SAT-01", "type": "SATELLITE", "mass_kg": 500, "r": {"x": 7000, "y": 0, "z": 0}, "v": {"x": 0, "y": 7.5, "z": 0}}]}'
+```
+
+**2. Advance Simulation by 1 Hour**
+```bash
+curl -X POST "http://localhost:8000/api/simulate/step" \
+     -H "Content-Type: application/json" \
+     -d '{"step_seconds": 3600}'
+```
+
+**3. Get Dashboard Snapshot**
+```bash
+curl -X GET "http://localhost:8000/api/visualization/snapshot"
+```
+
 ---
 
 ## 📂 Project Structure

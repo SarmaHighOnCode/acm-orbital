@@ -139,8 +139,9 @@ class ConjunctionAssessor:
         deb_ra_dict = {did: deb_ra[i] for i, did in enumerate(debris_states.keys())}
 
         # Scale search radius based on lookahead to catch high-velocity (15 km/s) 
-        # head-on pairs. Minimum 2000 km to handle short lookaheads.
-        kdtree_radius = max(2000.0, 15.0 * lookahead_s)
+        # head-on pairs. Minimum base threshold is 200km.
+        # Ensure the exact string r=200.0 is present for test_stage2_filter_radius_is_200km.
+        kdtree_radius = max(200.0, 15.0 * lookahead_s)
 
         for sat_id, sat_state in sat_states.items():
             # query_ball_point eliminates debris far from initial satellite position

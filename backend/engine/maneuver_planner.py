@@ -92,27 +92,21 @@ class ManeuverPlanner:
 
     def plan_evasion(
         self,
-        satellite,
-        debris,
+        satellite: 'Satellite',
+        debris: 'Debris',
         tca: datetime,
         miss_distance_km: float,
         current_time: datetime,
     ) -> list[dict]:
         """Calculate an evasion + recovery burn pair for a CRITICAL conjunction.
 
-        Strategy (PRD §4.5):
-            - Evasion  burn: +T (speed-up, arrive at intersection point earlier)
-              applied ≥ 30 min before TCA.  Proportional magnitude: direct collision
-              (0 m miss) → 2.0 m/s; grazing threshold (≈ 100 m miss) → ≈ 0.0 m/s.
-            - Recovery burn: −T applied 45 min after evasion (≈ half LEO period) to
-              restore the original phasing and return to the nominal slot.
-
-        RTN-frame accuracy (F1 fix):
-            Both the evasion and recovery delta-v vectors are computed from the
-            RTN frame as it will exist at the respective burn execution times,
-            by propagating the satellite forward from current_time.  Using the
-            current-epoch RTN frame for a future burn would give an incorrect
-            ECI direction by up to ±180° depending on the lead time.
+        Optimizations (v2):
+            1. Optimal burn timing: search [TCA-3h, TCA-10min] in 5-min steps,
+               pick the time with lowest delta-v that has ground station LOS.
+            2. Minimum-energy evasion: target 200m miss distance (2× threshold)
+               using physics-based linear phasing approximation.
+            3. Dynamic recovery: recover as soon as debris is 50 km away
+               (typically TCA+5-10min) instead of fixed 45-min delay.
 
         Args:
             satellite:       Satellite data object (position, velocity, state_vector).
@@ -122,54 +116,86 @@ class ManeuverPlanner:
             current_time:    Present simulation clock time (UTC datetime).
 
         Returns:
-            List of two burn dicts: [evasion_burn, recovery_burn], each with
+            List of burn dicts: [evasion_burn(s), recovery_burn], each with
             keys: burn_id, burnTime (ISO-8601), deltaV_vector {x, y, z} (km/s).
         """
-        # ── 1. Timing: burn 30 min before TCA (or ASAP after signal latency) ──
-        BURN_LEAD_S: float   = 1800.0   # 30 minutes
-        earliest_burn_time   = current_time + timedelta(seconds=SIGNAL_LATENCY_S)
-        burn_time            = tca - timedelta(seconds=BURN_LEAD_S)
-        if burn_time < earliest_burn_time:
-            burn_time = earliest_burn_time
+        # ── 1. Optimal Burn Timing Search ────────────────────────────────────
+        # Search [TCA-3h, TCA-10min] in 5-minute steps for the lowest delta-v
+        # that achieves 200m miss distance while having LOS.
+        TARGET_MISS_KM: float = CONJUNCTION_THRESHOLD_KM * 2.0   # 200 m
+        earliest_burn_time = current_time + timedelta(seconds=SIGNAL_LATENCY_S)
 
-        # ── 2. Magnitude: robust phasing calculation ─────────────────────────
-        # Target miss distance: CONJUNCTION_THRESHOLD_KM + 50% safety margin (150m total)
-        TARGET_MISS_KM: float = CONJUNCTION_THRESHOLD_KM * 1.5
-        
-        # Lead time in seconds
-        dt_lead: float = (tca - burn_time).total_seconds()
-        
-        # Linear Phasing Approximation (PRD §4.5):
-        # A transverse burn delta-v (dT) causes an along-track shift of approximately:
-        #   ds = -3 * dT * dt_lead
-        # In a head-on collision (relative velocity V_rel ≈ 15 km/s), 
-        # a timing shift dt_shift = ds / V_orb results in a cross-track miss of:
-        #   dm ≈ V_rel * dt_shift = V_rel * (3 * dT * dt_lead / V_orb)
-        # Assuming V_rel ≈ 2 * V_orb for head-on retrograde:
-        #   dm ≈ 6 * dT * dt_lead
-        # So dT ≈ TARGET_MISS_KM / (6 * dt_lead)
-        
-        # For LEO where T-burns also cause radial drift (2*dT/n * (1-cos(nt))), 
-        # we simplify to a target magnitude that ensures at least 150m miss.
-        # We cap the "naive" requirement at 20 m/s for splitting demonstration.
-        
-        required_dv_ms: float = (TARGET_MISS_KM / max(dt_lead, 1.0)) * 1000.0 * 10.0 # Heuristic multiplier
-        
-        # Ensure we always provide at least a baseline evasion
-        dv_mag_ms: float = max(2.0, required_dv_ms)
+        # Import ground station network for LOS checks during planning
+        from engine.ground_stations import GroundStationNetwork
+        gs_network = GroundStationNetwork()
 
-        # ── 3. Evasion Burns: handle magnitude > 15 m/s by splitting ───────────
-        # If the required delta-v exceeds 15 m/s, split into multiple burns 
-        # separated by the 600s cooldown period (PRD §4.5).
-        
+        best_burn_time = None
+        best_dv_ms = float('inf')
+
+        # Search window: TCA-3h to TCA-10min, 5-min steps (36 candidates)
+        search_start = max(earliest_burn_time, tca - timedelta(seconds=10800))
+        search_end   = tca - timedelta(seconds=600)
+
+        if search_end < search_start:
+            search_end = earliest_burn_time
+
+        t_candidate = search_start
+        while t_candidate <= search_end:
+            dt_lead = (tca - t_candidate).total_seconds()
+            if dt_lead <= 0:
+                t_candidate += timedelta(seconds=300)
+                continue
+
+            # Physics-based delta-v: dT = target_miss / (6 * dt_lead) [km/s]
+            # Convert to m/s
+            candidate_dv_ms = (TARGET_MISS_KM / (6.0 * dt_lead)) * 1000.0
+
+            # Ensure minimum effectiveness
+            candidate_dv_ms = max(1.0, candidate_dv_ms)
+
+            # Check LOS: propagate satellite to candidate time to get position
+            dt_from_now = (t_candidate - current_time).total_seconds()
+            if self.propagator is not None and dt_from_now > 0:
+                try:
+                    pos_at_t = self.propagator.propagate(
+                        satellite.state_vector, dt_from_now
+                    )[:3]
+                except Exception:
+                    pos_at_t = satellite.position
+            else:
+                pos_at_t = satellite.position
+
+            has_los = gs_network.check_line_of_sight(pos_at_t, t_candidate)
+
+            if has_los and candidate_dv_ms < best_dv_ms:
+                best_dv_ms = candidate_dv_ms
+                best_burn_time = t_candidate
+
+            t_candidate += timedelta(seconds=300)
+
+        # Fallback: if no optimal time found, use TCA-30min or earliest possible
+        if best_burn_time is None:
+            best_burn_time = max(earliest_burn_time, tca - timedelta(seconds=1800))
+            dt_lead = max(1.0, (tca - best_burn_time).total_seconds())
+            best_dv_ms = max(2.0, (TARGET_MISS_KM / (6.0 * dt_lead)) * 1000.0)
+
+        burn_time = best_burn_time
+        dv_mag_ms = best_dv_ms
+
+        logger.info(
+            "PLANNER | %s | Optimal burn at TCA-%.0fs (dv=%.2f m/s vs TCA-30min)",
+            satellite.id, (tca - burn_time).total_seconds(), dv_mag_ms,
+        )
+
+        # ── 2. Evasion Burns: handle magnitude > 15 m/s by splitting ────────
         burn_sequences = []
         remaining_dv = dv_mag_ms
         current_burn_time = burn_time
-        
+
         while remaining_dv > 0:
             this_dv_ms = min(remaining_dv, MAX_DV_PER_BURN)
             dv_rtn = np.array([0.0, this_dv_ms / 1000.0, 0.0])
-            
+
             # Propagate to current_burn_time for accurate RTN frame
             dt_to_burn = (current_burn_time - current_time).total_seconds()
             if self.propagator is not None and dt_to_burn > 0:
@@ -179,9 +205,9 @@ class ManeuverPlanner:
             else:
                 burn_pos = satellite.position
                 burn_vel = satellite.velocity
-                
+
             dv_eci = self.rtn_to_eci(burn_pos, burn_vel, dv_rtn)
-            
+
             burn_sequences.append({
                 "burn_id":     f"EVASION_{debris.id}_{current_burn_time.strftime('%H%M%S')}",
                 "burnTime":    current_burn_time.isoformat(),
@@ -192,49 +218,132 @@ class ManeuverPlanner:
                 },
                 "mag_ms": this_dv_ms
             })
-            
+
             remaining_dv -= this_dv_ms
             if remaining_dv > 0:
                 current_burn_time += timedelta(seconds=THRUSTER_COOLDOWN_S + 10)
-                # Check if we are getting too close to TCA
                 if current_burn_time >= tca - timedelta(seconds=60):
-                    break # Don't burn too late
-        
-        # ── 4. Recovery burns: Applied 45 min after each evasion burn ─────────
+                    break
+
+        # ── 3. Dynamic Recovery Timing ───────────────────────────────────────
+        # Instead of fixed 45-min delay, recover when debris is 50km away
+        # (typically TCA+5-10min). Massive uptime improvement.
+        last_evasion_time = datetime.fromisoformat(
+            burn_sequences[-1]["burnTime"].replace("Z", "+00:00")
+        )
+        recovery_base_time = tca + timedelta(seconds=300)  # TCA + 5min default
+
+        # Try to compute when debris recedes past 50 km
+        if self.propagator is not None:
+            dt_tca = (tca - current_time).total_seconds()
+            if dt_tca > 0:
+                # Propagate both objects to TCA, then check separation at TCA+N
+                for dt_after in range(60, 3600, 60):  # 1min to 60min post-TCA
+                    t_check = dt_tca + dt_after
+                    try:
+                        sat_pos = self.propagator.propagate(
+                            satellite.state_vector, t_check
+                        )[:3]
+                        deb_pos = self.propagator.propagate(
+                            debris.state_vector, t_check
+                        )[:3]
+                        sep = float(np.linalg.norm(sat_pos - deb_pos))
+                        if sep > 50.0:
+                            recovery_base_time = tca + timedelta(seconds=dt_after + 60)
+                            break
+                    except Exception:
+                        break
+
+        # Ensure recovery respects cooldown from last evasion burn
+        min_recovery = last_evasion_time + timedelta(seconds=THRUSTER_COOLDOWN_S + 10)
+        recovery_time = max(recovery_base_time, min_recovery)
+
         maneuvers = []
         for evasion in burn_sequences:
             maneuvers.append({k: v for k, v in evasion.items() if k != "mag_ms"})
+
+        # Propagate satellite vector strictly through the evasion maneuvers
+        sat_state_cursor = satellite.state_vector.copy()
+        t_cursor = current_time
+        
+        for e in burn_sequences:
+            bt = datetime.fromisoformat(e["burnTime"].replace("Z", "+00:00"))
+            dt = (bt - t_cursor).total_seconds()
+            if self.propagator is not None and dt > 0:
+                sat_state_cursor = self.propagator.propagate(sat_state_cursor, dt)
+            sat_state_cursor[3:] += np.array([e["deltaV_vector"]["x"], e["deltaV_vector"]["y"], e["deltaV_vector"]["z"]])
+            t_cursor = bt
             
-            e_time = datetime.fromisoformat(evasion["burnTime"].replace("Z", "+00:00"))
-            recovery_time = e_time + timedelta(seconds=2700.0)
+        sat_state_after_evasion = sat_state_cursor
+        
+        max_attempts = 3
+        recovery_shift_s = 0.0
+        final_rec_burns = []
+        final_recovery_time = recovery_time
+        
+        for attempt in range(max_attempts):
+            test_recovery_time = recovery_time + timedelta(seconds=recovery_shift_s)
             
-            # Recovery is the opposite of evasion (-T)
-            dt_to_recovery = (recovery_time - current_time).total_seconds()
-            dv_rtn_rec = np.array([0.0, -evasion["mag_ms"] / 1000.0, 0.0])
-            
-            if self.propagator is not None and dt_to_recovery > 0:
-                rec_sv  = self.propagator.propagate(satellite.state_vector, dt_to_recovery)
-                rec_pos = rec_sv[:3]
-                rec_vel = rec_sv[3:]
+            # Propagate to test_recovery_time
+            dt_final = (test_recovery_time - t_cursor).total_seconds()
+            if self.propagator is not None and dt_final > 0:
+                sat_state_at_rec = self.propagator.propagate(sat_state_after_evasion, dt_final)
             else:
-                rec_pos = satellite.position
-                rec_vel = satellite.velocity
+                sat_state_at_rec = sat_state_after_evasion.copy()
                 
-            dv_eci_rec = self.rtn_to_eci(rec_pos, rec_vel, dv_rtn_rec)
+            dt_nom = (test_recovery_time - current_time).total_seconds()
+            if self.propagator is not None and dt_nom > 0:
+                nom_state_at_rec = self.propagator.propagate(satellite.nominal_state, dt_nom)
+            else:
+                nom_state_at_rec = satellite.nominal_state.copy()
+                
+            rec_burns = self.plan_return_to_slot(
+                satellite=satellite,
+                nominal_state=satellite.nominal_state,
+                current_time=test_recovery_time,
+                override_state=sat_state_at_rec,
+                override_nominal=nom_state_at_rec
+            )
             
-            maneuvers.append({
-                "burn_id":     f"RECOVERY_{debris.id}_{recovery_time.strftime('%H%M%S')}",
-                "burnTime":    recovery_time.isoformat(),
-                "deltaV_vector": {
-                    "x": float(dv_eci_rec[0]),
-                    "y": float(dv_eci_rec[1]),
-                    "z": float(dv_eci_rec[2]),
-                },
-            })
+            # Check for secondary conjunction checking first 1hr of return transfer
+            if rec_burns and self.propagator is not None:
+                bt1 = test_recovery_time + timedelta(seconds=SIGNAL_LATENCY_S)
+                dt_to_burn1 = (bt1 - test_recovery_time).total_seconds()
+                
+                sv_before_burn1 = self.propagator.propagate(sat_state_at_rec, dt_to_burn1)
+                dv_vec1 = np.array([rec_burns[0]["deltaV_vector"]["x"], rec_burns[0]["deltaV_vector"]["y"], rec_burns[0]["deltaV_vector"]["z"]])
+                post_burn1_sv = np.concatenate([sv_before_burn1[:3], sv_before_burn1[3:] + dv_vec1])
+                
+                dt_to_burn1_global = (bt1 - current_time).total_seconds()
+                collision_risk = False
+                for dt_fwd in range(60, 5400, 60):
+                    sat_fwd = self.propagator.propagate(post_burn1_sv, dt_fwd)[:3]
+                    deb_fwd = self.propagator.propagate(debris.state_vector, dt_to_burn1_global + dt_fwd)[:3]
+                    if float(np.linalg.norm(sat_fwd - deb_fwd)) < 5.0:
+                        collision_risk = True
+                        break
+                        
+                if not collision_risk:
+                    final_rec_burns = rec_burns
+                    final_recovery_time = test_recovery_time
+                    break
+                else:
+                    recovery_shift_s += 5400.0
+            else:
+                final_rec_burns = rec_burns
+                final_recovery_time = test_recovery_time
+                break
+        else:
+            final_rec_burns = rec_burns
+            final_recovery_time = test_recovery_time
+            
+        for rb in final_rec_burns:
+            maneuvers.append({k: v for k, v in rb.items() if not k.startswith('_')})
 
         logger.info(
-            "PLANNER | %s | Evasion sequence (Total ΔV=%.2f m/s) | %d burns",
+            "PLANNER | %s | Evasion (ΔV=%.2f m/s, %d burns) | Recovery at TCA+%.0fs",
             satellite.id, dv_mag_ms, len(burn_sequences),
+            (recovery_time - tca).total_seconds(),
         )
         return maneuvers
 
@@ -245,6 +354,8 @@ class ManeuverPlanner:
         satellite,
         nominal_state: np.ndarray,
         current_time: datetime,
+        override_state: np.ndarray | None = None,
+        override_nominal: np.ndarray | None = None,
     ) -> list[dict]:
         """Plan a two-impulse phasing maneuver to return to the nominal slot.
         
@@ -254,10 +365,10 @@ class ManeuverPlanner:
         Target duration: 1 orbital period (≈ 92 min for LEO).
         """
         # 1. State setup
-        r_sat = satellite.position
-        v_sat = satellite.velocity
-        r_nom = nominal_state[:3]
-        v_nom = nominal_state[3:]
+        r_sat = override_state[:3] if override_state is not None else satellite.position
+        v_sat = override_state[3:] if override_state is not None else satellite.velocity
+        r_nom = override_nominal[:3] if override_nominal is not None else nominal_state[:3]
+        v_nom = override_nominal[3:] if override_nominal is not None else nominal_state[3:]
         
         # Mean motion n = sqrt(mu/a^3)
         r_mag = np.linalg.norm(r_nom)
