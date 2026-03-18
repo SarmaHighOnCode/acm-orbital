@@ -94,12 +94,26 @@ class SimulateStepResponse(BaseModel):
 # ── Visualization Snapshot ───────────────────────────────────────────────
 
 class SatelliteSnapshot(BaseModel):
-    """Single satellite in the visualization snapshot."""
+    """Single satellite in the visualization snapshot (geodetic coords)."""
     id: str
-    position: Vector3D
-    velocity: Vector3D
+    lat: float                         # Geodetic latitude (degrees)
+    lon: float                         # Geodetic longitude (degrees)
+    alt_km: float                      # Altitude above WGS84 ellipsoid (km)
     fuel_kg: float
     status: Literal["NOMINAL", "EVADING", "RECOVERING", "EOL"]
+    uptime_score: float = 1.0
+    time_outside_box_s: float = 0.0
+    queued_burns: int = 0
+
+
+class CDMSnapshot(BaseModel):
+    """Single CDM summary for the frontend bullseye plot."""
+    satellite_id: str
+    debris_id: str
+    tca: str                           # ISO-8601 datetime string
+    miss_distance_km: float
+    risk: str
+    relative_velocity_km_s: float
 
 
 class SnapshotResponse(BaseModel):
@@ -109,3 +123,6 @@ class SnapshotResponse(BaseModel):
     debris_cloud: list[list]           # Flattened tuples: [ID, lat, lon, alt]
     active_cdm_count: int
     maneuver_queue_depth: int
+    cdms: list[CDMSnapshot] = []
+    maneuver_log: list[dict] = []      # Last 50 maneuver execution events
+    collision_count: int = 0

@@ -69,7 +69,7 @@ function SatellitePoints() {
 
     for (let i = 0; i < satellites.length; i++) {
       const sat = satellites[i];
-      const { x, y, z } = geoToCartesian(sat.lat, sat.lon, sat.alt_km);
+      const { x, y, z } = geoToCartesian(sat.lat, sat.lon, sat.alt || sat.alt_km);
       positions[i * 3]     = x;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = z;
