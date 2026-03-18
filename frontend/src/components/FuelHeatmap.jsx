@@ -1,40 +1,67 @@
 /**
- * FuelHeatmap.jsx — Fleet Fuel Gauges & Δv Analysis
+ * FuelHeatmap.jsx — Fleet Fuel Gauges (Sorted + Enhanced)
  * Owner: Dev 3 (Frontend)
  *
- * - Fuel gauge bar per satellite (green→yellow→red gradient)
- * - Fleet status counters (NOMINAL / EVADING / RECOVERING / EOL)
- * - Delta-v cost vs collisions avoided (Recharts)
+ * PDF Section 6.2: "Visual fuel gauge representing mfuel for every satellite"
+ *
+ * - Sorted by fuel remaining (lowest first — critical at top)
+ * - Gradient colors: green > yellow > red > black (EOL)
+ * - Percentage text overlay
+ * - Fleet status counters with total fuel
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import useStore from '../store';
 
-function FuelBar({ id, fuelKg, maxFuel = 50, onClick, isSelected }) {
-  const pct = (fuelKg / maxFuel) * 100;
-  const color = pct > 50 ? '#00ff88' : pct > 20 ? '#ffaa00' : '#ff3355';
+function FuelBar({ id, fuelKg, status, maxFuel = 50, onClick, isSelected }) {
+  const pct = Math.max(0, (fuelKg / maxFuel) * 100);
+  const isEOL = status === 'EOL';
+  const color = isEOL
+    ? '#1a1a2e'
+    : pct > 70
+    ? '#00ff88'
+    : pct > 30
+    ? '#ffaa00'
+    : '#ff3355';
 
   return (
     <div
-      className={`flex items-center gap-2 text-xs cursor-pointer rounded px-1 transition-colors ${
-        isSelected ? 'bg-space-600' : 'hover:bg-space-700/50'
+      className={`flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-0.5 transition-colors ${
+        isSelected ? 'bg-space-600 ring-1 ring-nominal/30' : 'hover:bg-space-700/50'
       }`}
       onClick={() => onClick(id)}
     >
-      <span className="w-20 truncate font-mono text-gray-400">{id}</span>
-      <div className="flex-1 h-2 bg-space-700 rounded-full overflow-hidden">
+      <span className="w-16 truncate font-mono text-gray-400 text-[10px]">
+        {id.replace('SAT-Alpha-', '\u03b1')}
+      </span>
+      <div className="flex-1 h-3 bg-space-700 rounded-full overflow-hidden relative">
         <div
-          className="h-full rounded-full transition-all duration-300"
-          style={{ width: `${pct}%`, backgroundColor: color }}
+          className="h-full rounded-full transition-all duration-500 ease-out"
+          style={{
+            width: `${pct}%`,
+            backgroundColor: color,
+            boxShadow: isEOL ? 'none' : `0 0 6px ${color}44`,
+          }}
         />
+        <span className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/70">
+          {pct.toFixed(0)}%
+        </span>
       </div>
-      <span className="w-12 text-right font-mono text-gray-500">{fuelKg.toFixed(1)}</span>
+      <span className="w-14 text-right font-mono text-gray-500 text-[10px]">
+        {fuelKg.toFixed(1)} kg
+      </span>
     </div>
   );
 }
 
 export default function FuelHeatmap() {
   const { satellites, selectedSatellite, setSelectedSatellite } = useStore();
+
+  // Sort: lowest fuel first (most critical at top)
+  const sorted = useMemo(
+    () => [...satellites].sort((a, b) => a.fuel_kg - b.fuel_kg),
+    [satellites]
+  );
 
   const statusCounts = satellites.reduce(
     (acc, sat) => {
@@ -44,28 +71,36 @@ export default function FuelHeatmap() {
     { NOMINAL: 0, EVADING: 0, RECOVERING: 0, EOL: 0 }
   );
 
+  const totalFuel = satellites.reduce((s, sat) => s + sat.fuel_kg, 0);
+
   return (
     <div className="w-full h-full flex flex-col">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
         Fleet Fuel Status
       </h3>
 
       {/* Status counters */}
-      <div className="flex gap-3 mb-3 text-xs font-mono">
+      <div className="flex gap-3 mb-1 text-[10px] font-mono">
         <span className="text-nominal">NOM: {statusCounts.NOMINAL}</span>
         <span className="text-evading">EVD: {statusCounts.EVADING}</span>
         <span className="text-gray-400">REC: {statusCounts.RECOVERING}</span>
         <span className="text-eol">EOL: {statusCounts.EOL}</span>
       </div>
 
+      {/* Fleet fuel summary */}
+      <div className="text-[9px] font-mono text-gray-500 mb-2">
+        Fleet total: {totalFuel.toFixed(1)} kg / {satellites.length * 50} kg
+      </div>
+
       {/* Fuel bars */}
-      <div className="flex-1 overflow-y-auto space-y-1">
-        {satellites.length > 0 ? (
-          satellites.map((sat) => (
+      <div className="flex-1 overflow-y-auto space-y-0.5 min-h-0">
+        {sorted.length > 0 ? (
+          sorted.map((sat) => (
             <FuelBar
               key={sat.id}
               id={sat.id}
               fuelKg={sat.fuel_kg}
+              status={sat.status}
               onClick={setSelectedSatellite}
               isSelected={selectedSatellite === sat.id}
             />
