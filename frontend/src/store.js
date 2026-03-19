@@ -35,6 +35,7 @@ const useStore = create((set, get) => ({
   selectedSatellite: null,
   isLoading: false,
   error: null,
+  connected: true,
 
   // Actions
   setSnapshot: (snapshot) =>
@@ -75,6 +76,7 @@ const useStore = create((set, get) => ({
   setSelectedSatellite: (id) => set({ selectedSatellite: id }),
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error }),
+  setConnected: (val) => set({ connected: val }),
 }));
 
 export default useStore;

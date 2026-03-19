@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -46,16 +49,109 @@ def get_engine() -> SimulationEngine:
     return engine
 
 
+# ── Auto-Seed ────────────────────────────────────────────────────────────
+
+def _auto_seed(eng: SimulationEngine) -> None:
+    """Seed the engine with demo data so the dashboard is populated on boot.
+
+    Runs synchronously during startup (before the server accepts requests).
+    Controlled by ACM_AUTO_SEED env var (defaults to "1" = enabled).
+    """
+    if os.environ.get("ACM_AUTO_SEED", "1") == "0":
+        logger.info("AUTO_SEED | Skipped (ACM_AUTO_SEED=0)")
+        return
+
+    from generate_telemetry import build_telemetry_payload, generate_satellite_batch
+
+    logger.info("AUTO_SEED | Generating 50 satellites + 10,000 debris (LEO mode)...")
+    t0 = time.perf_counter()
+
+    payload = build_telemetry_payload(
+        n_satellites=50,
+        n_debris=10_000,
+        mode="leo",
+        seed=42,
+        timestamp="2026-03-12T08:00:00.000Z",
+    )
+
+    # Inject 20 threat debris on near-collision courses
+    sat_objects = [o for o in payload["objects"] if o["type"] == "SATELLITE"]
+    threats = _generate_threat_debris(sat_objects)
+    payload["objects"].extend(threats)
+
+    gen_t = time.perf_counter() - t0
+    logger.info("AUTO_SEED | Generated %d objects in %.2fs", len(payload["objects"]), gen_t)
+
+    # Ingest directly into the engine (no HTTP round-trip)
+    t0 = time.perf_counter()
+    result = eng.ingest_telemetry(payload["timestamp"], payload["objects"])
+    logger.info(
+        "AUTO_SEED | Ingested %d objects | CDMs: %d | %.2fs",
+        result["processed_count"], result["active_cdm_warnings"],
+        time.perf_counter() - t0,
+    )
+
+    # Run 5 simulation steps (600s each = 50 min) to activate the full pipeline
+    logger.info("AUTO_SEED | Running 5 x 600s simulation steps...")
+    for i in range(5):
+        t0 = time.perf_counter()
+        step_result = eng.step(600)
+        logger.info(
+            "AUTO_SEED | Step %d/5 | collisions=%d maneuvers=%d | %.2fs",
+            i + 1,
+            step_result.get("collisions_detected", 0),
+            step_result.get("maneuvers_executed", 0),
+            time.perf_counter() - t0,
+        )
+
+    logger.info("AUTO_SEED | Complete — dashboard ready")
+
+
+def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 1) -> list[dict]:
+    """Create debris on near-collision courses with the first 20 satellites."""
+    rng = np.random.default_rng(99)
+    threats = []
+    targets = satellites[:min(20, len(satellites))]
+
+    for sat in targets:
+        r_sat = np.array([sat["r"]["x"], sat["r"]["y"], sat["r"]["z"]])
+        v_sat = np.array([sat["v"]["x"], sat["v"]["y"], sat["v"]["z"]])
+
+        for j in range(n_per_sat):
+            offset_dir = rng.normal(0, 1, 3)
+            offset_dir /= np.linalg.norm(offset_dir)
+            offset_km = rng.uniform(2.0, 8.0)
+            r_deb = r_sat + offset_dir * offset_km
+
+            closing_speed = rng.uniform(0.001, 0.005)
+            v_deb = v_sat - offset_dir * closing_speed
+            v_deb += rng.normal(0, 0.0005, 3)
+
+            threats.append({
+                "id": f"THREAT-{sat['id']}-{j:02d}",
+                "type": "DEBRIS",
+                "r": {"x": float(r_deb[0]), "y": float(r_deb[1]), "z": float(r_deb[2])},
+                "v": {"x": float(v_deb[0]), "y": float(v_deb[1]), "z": float(v_deb[2])},
+            })
+
+    return threats
+
+
 # ── Lifespan ─────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize SimulationEngine on startup, cleanup on shutdown."""
+    """Initialize SimulationEngine on startup, auto-seed, cleanup on shutdown."""
     global engine
     logger.info("ACM-Orbital starting up — initializing SimulationEngine")
     engine = SimulationEngine()
     app.state.engine = engine
     app.state.engine_lock = engine_lock
+
+    # Auto-seed in a thread so we don't block the event loop
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _auto_seed, engine)
+
     yield
     logger.info("ACM-Orbital shutting down")
     engine = None

@@ -226,6 +226,15 @@ export default function BullseyePlot() {
     };
   }, [draw]);
 
+  // Resize observer
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => draw(performance.now()));
+    ro.observe(canvas.parentElement);
+    return () => ro.disconnect();
+  }, [draw]);
+
   return (
     <div className="w-full h-full flex flex-col">
       <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
