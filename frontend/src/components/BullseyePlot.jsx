@@ -10,7 +10,7 @@
  * 5. Pulsing animation for CRITICAL CDMs                     [x]
  */
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import useStore from '../store';
 
 const RISK_COLORS = {
@@ -46,13 +46,15 @@ export default function BullseyePlot() {
   const animRef = useRef(null);
   const { selectedSatellite, cdms, satellites, timestamp } = useStore();
 
-  const selectedData = selectedSatellite
-    ? satellites.find((s) => s.id === selectedSatellite)
-    : null;
+  const selectedData = useMemo(
+    () => selectedSatellite ? satellites.find((s) => s.id === selectedSatellite) : null,
+    [selectedSatellite, satellites]
+  );
 
   // Filter CDMs for selected satellite
-  const relevantCdms = cdms.filter(
-    (c) => c.satellite_id === selectedSatellite || c.debris_id === selectedSatellite
+  const relevantCdms = useMemo(
+    () => cdms.filter((c) => c.satellite_id === selectedSatellite || c.debris_id === selectedSatellite),
+    [cdms, selectedSatellite]
   );
 
   const draw = useCallback(
@@ -216,7 +218,7 @@ export default function BullseyePlot() {
         animRef.current = requestAnimationFrame(draw);
       }
     },
-    [selectedSatellite, cdms, satellites, relevantCdms, selectedData, timestamp]
+    [selectedSatellite, relevantCdms, selectedData, timestamp]
   );
 
   useEffect(() => {
