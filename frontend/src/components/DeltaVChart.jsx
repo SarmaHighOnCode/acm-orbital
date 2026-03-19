@@ -11,14 +11,14 @@
  * Demonstrates evasion algorithm efficiency.
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import useStore from '../store';
 
 export default function DeltaVChart() {
   const canvasRef = useRef(null);
   const { maneuverLog, collisionCount } = useStore();
 
-  useEffect(() => {
+  const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -55,7 +55,7 @@ export default function DeltaVChart() {
     let evasionCount = 0;
     for (const entry of maneuverLog) {
       totalDv += entry.delta_v_magnitude_ms || 0;
-      evasionCount += 1; // Each maneuver = 1 collision avoided
+      evasionCount += 1;
       points.push({ dv: totalDv, evasions: evasionCount });
     }
 
@@ -87,7 +87,6 @@ export default function DeltaVChart() {
     for (let i = 0; i <= maxEvasions; i += xLabelStep) {
       const x = padL + (i / maxEvasions) * chartW;
       ctx.fillText(`${i}`, x, h - padB + 14);
-      // Grid line
       if (i > 0) {
         ctx.beginPath();
         ctx.moveTo(x, padT);
@@ -166,6 +165,17 @@ export default function DeltaVChart() {
       padT + 26
     );
   }, [maneuverLog, collisionCount]);
+
+  useEffect(() => { draw(); }, [draw]);
+
+  // Resize observer
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => draw());
+    ro.observe(canvas.parentElement);
+    return () => ro.disconnect();
+  }, [draw]);
 
   return (
     <div className="w-full h-full flex flex-col">

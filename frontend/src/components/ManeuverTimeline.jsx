@@ -13,7 +13,7 @@
  * Data comes from store.maneuverLog + store.cdms.
  */
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import useStore from '../store';
 
 const COOLDOWN_S = 600; // 600-second mandatory thruster cooldown
@@ -77,7 +77,7 @@ export default function ManeuverTimeline() {
     return status;
   }, [satellites]);
 
-  useEffect(() => {
+  const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -141,9 +141,8 @@ export default function ManeuverTimeline() {
 
       // ── Blackout zone indicator (orange hatched stripe at current time) ──
       if (blackoutStatus[satIds[i]]) {
-        // Show a blackout indicator around the NOW marker (satellite currently in blackout)
         const nowX = timeToX(centerMs);
-        const blackoutW = Math.max(20, (180 / (windowMs / 1000)) * (W - LABEL_W)); // ~3 min wide
+        const blackoutW = Math.max(20, (180 / (windowMs / 1000)) * (W - LABEL_W));
         const bx = nowX - blackoutW / 2;
 
         ctx.fillStyle = 'rgba(255, 149, 0, 0.12)';
@@ -335,18 +334,18 @@ export default function ManeuverTimeline() {
       ctx.textAlign = 'right';
       ctx.fillText(`${maneuverQueueDepth} burn(s) queued`, W - 4, legendY);
     }
-  }, [maneuverLog, cdms, maneuverQueueDepth, timestamp, satellites, selectedSatellite, satIds, simDate, blackoutStatus]);
+  }, [maneuverLog, cdms, maneuverQueueDepth, simDate, satIds, selectedSatellite, blackoutStatus]);
 
+  useEffect(() => { draw(); }, [draw]);
+
+  // Resize observer
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ro = new ResizeObserver(() => {
-      const el = canvasRef.current;
-      if (el) el.dispatchEvent(new Event('resize'));
-    });
+    const ro = new ResizeObserver(() => draw());
     ro.observe(canvas.parentElement);
     return () => ro.disconnect();
-  }, []);
+  }, [draw]);
 
   return (
     <div className="w-full h-full flex flex-col">
