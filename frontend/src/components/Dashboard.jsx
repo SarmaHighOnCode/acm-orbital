@@ -17,7 +17,7 @@ import DeltaVChart from './DeltaVChart';
 import useStore from '../store';
 
 export default function Dashboard() {
-  const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, error } =
+  const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, error, connected } =
     useStore();
 
   return (
@@ -38,7 +38,10 @@ export default function Dashboard() {
           <span className={collisionCount > 0 ? 'text-eol font-bold' : 'text-nominal'}>
             COL: {collisionCount}
           </span>
-          {error && (
+          {!connected && (
+            <span className="text-evading animate-pulse">RECONNECTING...</span>
+          )}
+          {error && connected && (
             <span className="text-eol">API ERR</span>
           )}
         </div>
