@@ -174,7 +174,7 @@ class ConjunctionAssessor:
         # Dense DOP853 over 24h is O(6D) state variables; beyond ~1000 debris
         # the single batch call dominates wall-clock. Prioritise debris that
         # appear in the most candidate pairs (highest threat multiplicity).
-        _MAX_DENSE_DEBRIS = 1000
+        _MAX_DENSE_DEBRIS = 300
         if len(deb_targets) > _MAX_DENSE_DEBRIS:
             # Rank by pair count (most-connected debris first)
             deb_pair_count: dict[str, int] = {}

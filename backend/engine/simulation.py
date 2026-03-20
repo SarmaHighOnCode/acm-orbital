@@ -215,7 +215,7 @@ class SimulationEngine:
         sat_states = {s.id: s.state_vector for s in self.satellites.values()}
         _n_deb = len(self.debris)
         _ingest_lookahead = 86400.0 if _n_deb <= 2000 else (
-            14400.0 if _n_deb <= 5000 else 3600.0
+            7200.0 if _n_deb <= 5000 else 1800.0
         )
         self.active_cdms = self.assessor.assess(
             sat_states,
@@ -567,7 +567,7 @@ class SimulationEngine:
         # Adaptive lookahead: scale down for very large debris clouds
         _step_n_deb = len(self.debris)
         _step_lookahead = 86400.0 if _step_n_deb <= 2000 else (
-            14400.0 if _step_n_deb <= 5000 else 3600.0
+            7200.0 if _step_n_deb <= 5000 else 1800.0
         )
         self.active_cdms = self.assessor.assess(
             sat_states_snapshot,
