@@ -333,29 +333,40 @@ function SatelliteLabels() {
 function SatelliteTrails() {
   const satHistory = useStore((s) => s.satHistory);
   const selectedSatellite = useStore((s) => s.selectedSatellite);
+  const satellites = useStore((s) => s.satellites);
+
+  // Build a status color map for trail coloring
+  const satStatusMap = useMemo(() => {
+    const m = {};
+    for (const sat of satellites) m[sat.id] = sat.status;
+    return m;
+  }, [satellites]);
 
   const trails = useMemo(() => {
     const result = [];
     const entries = Object.entries(satHistory);
     for (const [satId, history] of entries) {
       if (!history || history.length < 2) continue;
-      // Show trail for selected satellite, or top 5 by history length
       const isSelected = satId === selectedSatellite;
-      if (!isSelected && entries.length > 10 && history.length < 5) continue;
 
       const points = [];
       for (const pt of history) {
         const pos = geoToCartesian(pt.lat, pt.lon, pt.alt || 400);
         points.push(pos);
       }
-      result.push({ satId, points, isSelected });
+
+      // Color trails by satellite status
+      const status = satStatusMap[satId] || 'NOMINAL';
+      const color = STATUS_HEX[status] || '#00ff88';
+
+      result.push({ satId, points, isSelected, color });
     }
     return result;
-  }, [satHistory, selectedSatellite]);
+  }, [satHistory, selectedSatellite, satStatusMap]);
 
   return (
     <group>
-      {trails.map(({ satId, points, isSelected }) => (
+      {trails.map(({ satId, points, isSelected, color }) => (
         <line key={`trail-${satId}`}>
           <bufferGeometry>
             <bufferAttribute
@@ -366,9 +377,9 @@ function SatelliteTrails() {
             />
           </bufferGeometry>
           <lineBasicMaterial
-            color={isSelected ? '#00ff88' : '#334466'}
+            color={isSelected ? color : '#557799'}
             transparent
-            opacity={isSelected ? 0.7 : 0.25}
+            opacity={isSelected ? 0.85 : 0.4}
             linewidth={1}
           />
         </line>
@@ -379,6 +390,7 @@ function SatelliteTrails() {
 
 /* ── Predicted Trajectory (dashed line) ──────────────── */
 function PredictedTrajectory() {
+  const lineRef = useRef();
   const satHistory = useStore((s) => s.satHistory);
   const selectedSatellite = useStore((s) => s.selectedSatellite);
 
@@ -408,10 +420,17 @@ function PredictedTrajectory() {
     return points;
   }, [satHistory, selectedSatellite]);
 
+  // computeLineDistances() is required for lineDashedMaterial to render dashes
+  useEffect(() => {
+    if (lineRef.current && lineRef.current.geometry) {
+      lineRef.current.computeLineDistances();
+    }
+  }, [prediction]);
+
   if (!prediction) return null;
 
   return (
-    <line>
+    <line ref={lineRef}>
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
@@ -423,9 +442,9 @@ function PredictedTrajectory() {
       <lineDashedMaterial
         color="#00ff88"
         transparent
-        opacity={0.4}
-        dashSize={0.1}
-        gapSize={0.05}
+        opacity={0.5}
+        dashSize={0.15}
+        gapSize={0.08}
         linewidth={1}
       />
     </line>
