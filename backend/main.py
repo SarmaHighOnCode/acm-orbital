@@ -182,9 +182,10 @@ def _reinject_threats(eng: SimulationEngine) -> None:
         for j in range(2):
             offset_dir = rng.normal(0, 1, 3)
             offset_dir /= np.linalg.norm(offset_dir)
-            offset_km = rng.uniform(1.5, 3.5)
+            offset_km = rng.uniform(1.0, 3.0)
             r_deb = r_sat + offset_dir * offset_km
-            v_deb = v_sat.copy() + rng.normal(0, 0.00003, 3)
+            # Exact co-orbital velocity — minimal perturbation to stay in YELLOW band
+            v_deb = v_sat.copy() + rng.normal(0, 0.000005, 3)
 
             objects.append({
                 "id": f"THREAT-{sat.id}-{j:02d}",
@@ -213,8 +214,8 @@ async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
             async with lock:
                 await loop.run_in_executor(None, eng.step, step_size)
                 step_count += 1
-                # Re-inject threats every ~30 steps (~60s) to keep CDMs alive
-                if step_count % 30 == 0:
+                # Re-inject threats every ~10 steps (~20s) to keep CDMs alive
+                if step_count % 10 == 0:
                     await loop.run_in_executor(None, _reinject_threats, eng)
         except asyncio.CancelledError:
             break
