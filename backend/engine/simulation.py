@@ -700,7 +700,7 @@ class SimulationEngine:
         """
         critical_groups: dict[str, list[CDM]] = {}
         for cdm in self.active_cdms:
-            if cdm.risk == "CRITICAL":
+            if cdm.risk in ("CRITICAL", "RED"):
                 critical_groups.setdefault(cdm.satellite_id, []).append(cdm)
                 # If it's a Sat-vs-Sat conjunction, the "debris" side also needs to evaluate it
                 if cdm.debris_id in self.satellites:
