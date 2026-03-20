@@ -36,6 +36,7 @@ from config import (
     G0,
     M_DRY,
     MU_EARTH,
+    R_EARTH,
     RTOL,
     ATOL,
 )
@@ -132,6 +133,7 @@ class SimulationEngine:
     def __init__(self) -> None:
         # Timezone-aware UTC clock — datetime.utcnow() is deprecated in Python 3.12+
         self.sim_time: datetime = datetime.now(timezone.utc)
+        self._time_set_by_telemetry: bool = False  # guards backward-time check
         self.satellites: dict[str, Satellite] = {}
         self.debris: dict[str, Debris] = {}
         self.active_cdms: list[CDM] = []
@@ -165,7 +167,16 @@ class SimulationEngine:
         Returns:
             ACK payload with processed_count and active_cdm_warnings.
         """
-        self.sim_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        new_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        # Never allow simulation clock to go backward (only after first ingest)
+        if self._time_set_by_telemetry and new_time < self.sim_time:
+            logger.warning(
+                "TELEMETRY | Backward timestamp %s < %s — keeping current time",
+                new_time.isoformat(), self.sim_time.isoformat(),
+            )
+        else:
+            self.sim_time = new_time
+            self._time_set_by_telemetry = True
 
         for obj in objects:
             # Handle both dict (from tests) and Pydantic models (from API)
@@ -178,6 +189,14 @@ class SimulationEngine:
                 pos = np.array([obj["r"]["x"], obj["r"]["y"], obj["r"]["z"]])
                 vel = np.array([obj["v"]["x"], obj["v"]["y"], obj["v"]["z"]])
                 o_id, o_type = obj["id"], obj["type"]
+
+            # Reject unphysical objects (inside Earth or at origin)
+            r_mag = np.linalg.norm(pos)
+            if r_mag < R_EARTH:  # below Earth surface → decayed/unphysical
+                logger.warning(
+                    "TELEMETRY | Rejected %s: |r| = %.1f km (sub-surface)", o_id, r_mag
+                )
+                continue
 
             if o_type == "SATELLITE":
                 if o_id not in self.satellites:

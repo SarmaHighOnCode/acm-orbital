@@ -83,32 +83,76 @@ class OrbitalPropagator:
         pos = state_arr[:, :3]  # (N, 3)
         vel = state_arr[:, 3:]  # (N, 3)
 
-        # Keplerian + J2 secular propagation: r_new = r + v*dt + 0.5*a*dt²
-        # Includes J2 perturbation so debris drift is physically correct.
-        x = pos[:, 0]
-        y = pos[:, 1]
-        z = pos[:, 2]
-        r = np.linalg.norm(pos, axis=1, keepdims=True)  # (N, 1)
-        r_scalar = r.squeeze()  # (N,)
+        # Filter out unphysical objects (r < 100 km) to avoid div-by-zero
+        r_mags = np.linalg.norm(pos, axis=1)
+        valid = r_mags > 100.0
+        if not np.all(valid):
+            # Return invalid objects unchanged; only propagate valid ones
+            invalid_mask = ~valid
+            valid_ids = [oid for oid, v in zip(object_ids, valid) if v]
+            invalid_ids = [oid for oid, v in zip(object_ids, valid) if not v]
+            if not valid_ids:
+                return dict(zip(object_ids, state_arr))
+            result = OrbitalPropagator.propagate_fast_batch(
+                {oid: states[oid] for oid in valid_ids}, dt_seconds
+            )
+            for oid in invalid_ids:
+                result[oid] = states[oid]
+            return result
 
-        # Two-body acceleration: a = -μ/r³ * r
-        a_gravity = -MU_EARTH * pos / (r ** 3)  # (N, 3)
-
-        # J2 perturbation (same formulation as _vectorized_derivatives)
-        factor = 1.5 * J2 * MU_EARTH * R_EARTH ** 2 / (r_scalar ** 5)
-        z2_r2 = (z / r_scalar) ** 2
-        coeff_xy = factor * (5.0 * z2_r2 - 1.0)
-        coeff_z = factor * (5.0 * z2_r2 - 3.0)
-        a_j2 = np.column_stack([x * coeff_xy, y * coeff_xy, z * coeff_z])
-
-        a_total = a_gravity + a_j2  # (N, 3)
-
-        # Position update: r + v*dt + 0.5*a*dt²
+        # ── Velocity Verlet (Störmer-Verlet) symplectic integrator ──────────
+        # Unlike basic Taylor/Euler, Verlet is symplectic: it conserves
+        # energy over many steps, preventing catastrophic secular drift.
+        #
+        # Algorithm:
+        #   1. a_old = acceleration(pos)
+        #   2. pos_new = pos + vel*dt + 0.5*a_old*dt²
+        #   3. a_new = acceleration(pos_new)
+        #   4. vel_new = vel + 0.5*(a_old + a_new)*dt
+        #
+        # Sub-stepping: for dt > 60s, split into sub-steps to keep
+        # truncation error small while remaining O(N) per sub-step.
         dt = dt_seconds
-        new_pos = pos + vel * dt + 0.5 * a_total * (dt ** 2)
+        n_sub = max(1, int(dt / 2.0))  # sub-steps of ≤2s for orbit-grade accuracy
+        h = dt / n_sub
 
-        # Velocity update: v + a*dt
-        new_vel = vel + a_total * dt
+        cur_pos = pos.copy()
+        cur_vel = vel.copy()
+
+        for _ in range(n_sub):
+            # Acceleration at current position (two-body + J2)
+            r_vec = np.linalg.norm(cur_pos, axis=1, keepdims=True)
+            r_s = r_vec.squeeze()
+            a_grav = -MU_EARTH * cur_pos / (r_vec ** 3)
+            f = 1.5 * J2 * MU_EARTH * R_EARTH ** 2 / (r_s ** 5)
+            z_r2 = (cur_pos[:, 2] / r_s) ** 2
+            cxy = f * (5.0 * z_r2 - 1.0)
+            cz = f * (5.0 * z_r2 - 3.0)
+            a_old = a_grav + np.column_stack([
+                cur_pos[:, 0] * cxy, cur_pos[:, 1] * cxy, cur_pos[:, 2] * cz
+            ])
+
+            # Position half-step
+            new_pos = cur_pos + cur_vel * h + 0.5 * a_old * (h ** 2)
+
+            # Acceleration at new position
+            r_vec2 = np.linalg.norm(new_pos, axis=1, keepdims=True)
+            r_s2 = r_vec2.squeeze()
+            a_grav2 = -MU_EARTH * new_pos / (r_vec2 ** 3)
+            f2 = 1.5 * J2 * MU_EARTH * R_EARTH ** 2 / (r_s2 ** 5)
+            z_r2_2 = (new_pos[:, 2] / r_s2) ** 2
+            cxy2 = f2 * (5.0 * z_r2_2 - 1.0)
+            cz2 = f2 * (5.0 * z_r2_2 - 3.0)
+            a_new = a_grav2 + np.column_stack([
+                new_pos[:, 0] * cxy2, new_pos[:, 1] * cxy2, new_pos[:, 2] * cz2
+            ])
+
+            # Velocity update (average of old and new accelerations)
+            cur_vel = cur_vel + 0.5 * (a_old + a_new) * h
+            cur_pos = new_pos
+
+        new_pos = cur_pos
+        new_vel = cur_vel
 
         # Pack results
         new_states = np.column_stack([new_pos, new_vel])  # (N, 6)
@@ -238,7 +282,16 @@ class OrbitalPropagator:
 
         Returns:
             Final state vector [x, y, z, vx, vy, vz] at t = dt_seconds.
+
+        Raises:
+            ValueError: If position magnitude is below Earth's surface or zero.
         """
+        r_mag = np.linalg.norm(state_vector[:3])
+        if r_mag < 100.0:  # below 100 km from center → unphysical
+            raise ValueError(
+                f"Unphysical position: |r| = {r_mag:.2f} km "
+                f"(below Earth surface). Cannot propagate."
+            )
         sol = solve_ivp(
             self._derivatives,
             [0.0, dt_seconds],
