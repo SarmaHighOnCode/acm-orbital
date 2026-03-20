@@ -139,6 +139,26 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 1) -> list[
 
 # ── Lifespan ─────────────────────────────────────────────────────────────
 
+async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
+    """Background task: advance the simulation by 100s every 2s so the dashboard
+    shows continuous orbital motion and trails build up in real-time."""
+    step_interval = float(os.environ.get("ACM_AUTO_STEP_INTERVAL", "2"))
+    step_size = int(float(os.environ.get("ACM_AUTO_STEP_SIZE", "100")))
+    if step_size <= 0:
+        return
+    logger.info("AUTO_STEP | Running %ds sim every %.0fs", step_size, step_interval)
+    loop = asyncio.get_event_loop()
+    while True:
+        await asyncio.sleep(step_interval)
+        try:
+            async with lock:
+                await loop.run_in_executor(None, eng.step, step_size)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning("AUTO_STEP | Error: %s", exc, exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize SimulationEngine on startup, auto-seed, cleanup on shutdown."""
@@ -152,7 +172,11 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _auto_seed, engine)
 
+    # Start background auto-stepping so the dashboard shows continuous motion
+    auto_step_task = asyncio.create_task(_auto_step_loop(engine, engine_lock))
+
     yield
+    auto_step_task.cancel()
     logger.info("ACM-Orbital shutting down")
     engine = None
 
