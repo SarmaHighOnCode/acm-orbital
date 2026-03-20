@@ -80,7 +80,7 @@ class ManeuverResponse(BaseModel):
 
 class SimulateStepRequest(BaseModel):
     """POST /api/simulate/step — request body."""
-    step_seconds: float = Field(gt=0)
+    step_seconds: float = Field(ge=0)
 
 
 class SimulateStepResponse(BaseModel):
