@@ -107,8 +107,15 @@ def _auto_seed(eng: SimulationEngine) -> None:
     logger.info("AUTO_SEED | Complete — dashboard ready")
 
 
-def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 1) -> list[dict]:
-    """Create debris on near-collision courses with the first 20 satellites."""
+def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 2) -> list[dict]:
+    """Create debris on near-collision courses with the first 20 satellites.
+
+    Two types of threats per satellite:
+    - Co-orbital (same velocity, tiny offset): stays in conjunction for many orbits,
+      producing sustained CDMs that populate the bullseye plot.
+    - Fast-crossing (relative velocity ~1-5 km/s): triggers CRITICAL CDMs quickly,
+      causing auto-evasion maneuvers that populate the delta-v chart.
+    """
     rng = np.random.default_rng(99)
     threats = []
     targets = satellites[:min(20, len(satellites))]
@@ -117,22 +124,38 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 1) -> list[
         r_sat = np.array([sat["r"]["x"], sat["r"]["y"], sat["r"]["z"]])
         v_sat = np.array([sat["v"]["x"], sat["v"]["y"], sat["v"]["z"]])
 
-        for j in range(n_per_sat):
-            offset_dir = rng.normal(0, 1, 3)
-            offset_dir /= np.linalg.norm(offset_dir)
-            offset_km = rng.uniform(2.0, 8.0)
-            r_deb = r_sat + offset_dir * offset_km
+        # Type 1: co-orbital debris — same velocity, ~0.05-0.09 km offset
+        # These linger near the satellite, generating sustained CDMs
+        offset_dir = rng.normal(0, 1, 3)
+        offset_dir /= np.linalg.norm(offset_dir)
+        offset_km = rng.uniform(0.05, 0.09)  # 50-90 m (just below 100 m threshold)
+        r_deb = r_sat + offset_dir * offset_km
+        # Nearly co-orbital: tiny velocity perturbation for slow drift
+        v_deb = v_sat + rng.normal(0, 0.00005, 3)
 
-            closing_speed = rng.uniform(0.001, 0.005)
-            v_deb = v_sat - offset_dir * closing_speed
-            v_deb += rng.normal(0, 0.0005, 3)
+        threats.append({
+            "id": f"THREAT-{sat['id']}-00",
+            "type": "DEBRIS",
+            "r": {"x": float(r_deb[0]), "y": float(r_deb[1]), "z": float(r_deb[2])},
+            "v": {"x": float(v_deb[0]), "y": float(v_deb[1]), "z": float(v_deb[2])},
+        })
 
-            threats.append({
-                "id": f"THREAT-{sat['id']}-{j:02d}",
-                "type": "DEBRIS",
-                "r": {"x": float(r_deb[0]), "y": float(r_deb[1]), "z": float(r_deb[2])},
-                "v": {"x": float(v_deb[0]), "y": float(v_deb[1]), "z": float(v_deb[2])},
-            })
+        # Type 2: crossing debris — relative velocity ~2 km/s, offset 2-5 km
+        # These approach fast and trigger CRITICAL CDMs → evasion maneuvers
+        cross_dir = rng.normal(0, 1, 3)
+        cross_dir /= np.linalg.norm(cross_dir)
+        offset_km2 = rng.uniform(2.0, 5.0)
+        r_deb2 = r_sat + cross_dir * offset_km2
+        closing_speed = rng.uniform(0.001, 0.003)
+        v_deb2 = v_sat - cross_dir * closing_speed
+        v_deb2 += rng.normal(0, 0.0003, 3)
+
+        threats.append({
+            "id": f"THREAT-{sat['id']}-01",
+            "type": "DEBRIS",
+            "r": {"x": float(r_deb2[0]), "y": float(r_deb2[1]), "z": float(r_deb2[2])},
+            "v": {"x": float(v_deb2[0]), "y": float(v_deb2[1]), "z": float(v_deb2[2])},
+        })
 
     return threats
 
