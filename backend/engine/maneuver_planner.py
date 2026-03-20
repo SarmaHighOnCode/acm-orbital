@@ -125,6 +125,10 @@ class ManeuverPlanner:
         TARGET_MISS_KM: float = CONJUNCTION_THRESHOLD_KM * 2.0   # 200 m
         earliest_burn_time = current_time + timedelta(seconds=SIGNAL_LATENCY_S)
 
+        if tca <= earliest_burn_time:
+            logger.warning("PLANNER | %s | TCA is before signal latency. Unresolvable.", satellite.id)
+            return []
+
         # Import ground station network for LOS checks during planning
         from engine.ground_stations import GroundStationNetwork
         gs_network = GroundStationNetwork()

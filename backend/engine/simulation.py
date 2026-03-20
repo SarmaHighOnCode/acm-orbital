@@ -427,13 +427,6 @@ class SimulationEngine:
         _sample_times_rel = [step_seconds * float(f)
                              for f in np.linspace(0.0, 1.0, _n_sub + 1)[1:]]
 
-        # ── Propagate nominal slots for the full step (unaffected by burns) ──
-        nominal_states = {sid: sat.nominal_state for sid, sat in self.satellites.items()}
-        if nominal_states:
-            new_nominal = self.propagator.propagate_batch(nominal_states, step_seconds)
-            for sid, sv in new_nominal.items():
-                self.satellites[sid].nominal_state = sv
-
         # ── Collect and sort all burns in this step window ──
         all_window_burns: list[tuple[datetime, str, dict]] = []
         for sat_id, sat in self.satellites.items():
@@ -520,6 +513,19 @@ class SimulationEngine:
                 for sid, sv in new_sat.items():
                     self.satellites[sid].state_vector = sv
 
+            # ── Propagate nominal slots to segment end ──
+            cur_nom_states = {sid: sat.nominal_state for sid, sat in self.satellites.items()}
+            if cur_nom_states:
+                if seg_samples and len(cur_sat_states) > 0:
+                    nom_ids, nom_sol = self.propagator.propagate_dense_batch(cur_nom_states, seg_dt)
+                    final_nom_seg = nom_sol(seg_dt)
+                    for j, sid in enumerate(nom_ids):
+                        self.satellites[sid].nominal_state = final_nom_seg[j].copy()
+                else:
+                    new_nom = self.propagator.propagate_batch(cur_nom_states, seg_dt)
+                    for sid, sv in new_nom.items():
+                        self.satellites[sid].nominal_state = sv
+
             # ── Apply burns at this segment boundary ──
             if seg_end in burns_at:
                 seg_end_dt = old_time + timedelta(seconds=seg_end)
@@ -528,6 +534,13 @@ class SimulationEngine:
                     dv = burn["deltaV_vector"]
                     dv_vec = np.array([dv["x"], dv["y"], dv["z"]])
                     dv_mag_ms = float(np.linalg.norm(dv_vec)) * 1000.0
+
+                    # Runtime re-validation: LOS
+                    if not self.gs_network.has_line_of_sight(sat.position):
+                        logger.warning(
+                            "MANEUVER | %s | %s | SKIPPED — no ground station LOS",
+                            sat_id, burn.get("burn_id", "BURN"))
+                        continue
 
                     # Runtime re-validation: fuel
                     if not self.fuel_tracker.sufficient_fuel(sat_id, dv_mag_ms):

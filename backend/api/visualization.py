@@ -24,5 +24,6 @@ def _get_engine(request: Request):
 async def get_snapshot(request: Request):
     """Return current state snapshot of all satellites and debris."""
     engine = _get_engine(request)
-    snapshot = engine.get_snapshot()
+    async with request.app.state.engine_lock:
+        snapshot = engine.get_snapshot()
     return snapshot
