@@ -348,6 +348,15 @@ class SimulationEngine:
         collisions_detected = 0
         maneuvers_executed  = 0
 
+        # ── Zero-step: no-op tick ──
+        if step_seconds == 0:
+            return {
+                "status": "STEP_COMPLETE",
+                "new_timestamp": self.sim_time.isoformat(),
+                "collisions_detected": 0,
+                "maneuvers_executed": 0,
+            }
+
         # ── Pre-calculation: Determine sub-sampling needs ──
         # Sub-step count: for large steps (e.g. 86400 s), use higher resolution
         # to avoid missing high-velocity flybys. One sample every ~10 min.
