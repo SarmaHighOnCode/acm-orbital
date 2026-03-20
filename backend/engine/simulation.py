@@ -470,12 +470,27 @@ class SimulationEngine:
                     maneuvers_executed += 1
 
                     # Structured JSON log (Code Quality)
+                    burn_id_str = burn.get("burn_id", "BURN")
+                    if "RTS" in burn_id_str.upper() or "RECOVERY" in burn_id_str.upper():
+                        burn_type = "RECOVERY"
+                    elif "EVASION" in burn_id_str.upper() or "EVA" in burn_id_str.upper():
+                        burn_type = "EVASION"
+                    elif "GRAVEYARD" in burn_id_str.upper() or "EOL" in burn_id_str.upper():
+                        burn_type = "GRAVEYARD"
+                    else:
+                        burn_type = "MANUAL"
                     log_entry = {
-                        "event": "MANEUVER_EXECUTED",
+                        "event": "BURN_EXECUTED",
+                        "type": burn_type,
                         "timestamp": burn_time.isoformat(),
                         "satellite_id": sat_id,
-                        "burn_id": burn.get("burn_id", "BURN"),
+                        "burn_id": burn_id_str,
                         "delta_v_magnitude_ms": round(dv_mag_ms, 4),
+                        "delta_v_vector_km_s": {
+                            "x": round(float(dv_vec[0]), 6),
+                            "y": round(float(dv_vec[1]), 6),
+                            "z": round(float(dv_vec[2]), 6),
+                        },
                         "fuel_consumed_kg": round(fuel_before - sat.fuel_kg, 3),
                         "fuel_remaining_kg": round(sat.fuel_kg, 2),
                         "mass_after_kg": round(M_DRY + sat.fuel_kg, 2),
@@ -872,13 +887,14 @@ class SimulationEngine:
             debris_ids = list(self.debris.keys())
             debris_pos = np.array([deb.position for deb in self.debris.values()])
             debris_lla = _eci_to_lla_batch(debris_pos)
-            for i, did in enumerate(debris_ids):
-                debris_cloud.append([
-                    did, 
-                    round(float(debris_lla[i, 0]), 2), 
-                    round(float(debris_lla[i, 1]), 2), 
-                    round(float(debris_lla[i, 2]), 1)
-                ])
+            # Vectorized rounding for 10K+ debris performance
+            lats = np.round(debris_lla[:, 0], 2)
+            lons = np.round(debris_lla[:, 1], 2)
+            alts = np.round(debris_lla[:, 2], 1)
+            debris_cloud = [
+                [debris_ids[i], float(lats[i]), float(lons[i]), float(alts[i])]
+                for i in range(len(debris_ids))
+            ]
 
         total_queued = sum(len(s.maneuver_queue) for s in self.satellites.values())
 
