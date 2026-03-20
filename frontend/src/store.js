@@ -67,10 +67,15 @@ const useStore = create((set, get) => ({
         maneuverLog: snapshot.maneuver_log || [],
         collisionCount: snapshot.collision_count || 0,
         satHistory: newHistory,
-        // Auto-select first satellite if none selected
+        // Auto-select: prefer a satellite with active CDMs for the bullseye,
+        // fall back to first satellite if none have CDMs
         selectedSatellite:
           state.selectedSatellite ||
-          (sats.length > 0 ? sats[0].id : null),
+          (() => {
+            const cdmList = snapshot.cdms || [];
+            if (cdmList.length > 0) return cdmList[0].satellite_id;
+            return sats.length > 0 ? sats[0].id : null;
+          })(),
       };
     }),
 

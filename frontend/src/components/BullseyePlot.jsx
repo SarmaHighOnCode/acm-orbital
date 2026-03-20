@@ -46,16 +46,31 @@ export default function BullseyePlot() {
   const animRef = useRef(null);
   const { selectedSatellite, cdms, satellites, timestamp } = useStore();
 
-  const selectedData = useMemo(
-    () => selectedSatellite ? satellites.find((s) => s.id === selectedSatellite) : null,
-    [selectedSatellite, satellites]
-  );
-
-  // Filter CDMs for selected satellite
-  const relevantCdms = useMemo(
-    () => cdms.filter((c) => c.satellite_id === selectedSatellite || c.debris_id === selectedSatellite),
-    [cdms, selectedSatellite]
-  );
+  // Pick the best satellite to display: prefer selected if it has CDMs,
+  // otherwise auto-pick the satellite with the most active CDMs
+  const { focusSatId, focusSatData, relevantCdms } = useMemo(() => {
+    const selectedCdms = cdms.filter(
+      (c) => c.satellite_id === selectedSatellite || c.debris_id === selectedSatellite
+    );
+    if (selectedCdms.length > 0 || cdms.length === 0) {
+      return {
+        focusSatId: selectedSatellite,
+        focusSatData: satellites.find((s) => s.id === selectedSatellite) || null,
+        relevantCdms: selectedCdms,
+      };
+    }
+    // Selected sat has no CDMs — find the satellite with the most CDMs
+    const counts = {};
+    for (const c of cdms) {
+      counts[c.satellite_id] = (counts[c.satellite_id] || 0) + 1;
+    }
+    const bestId = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    return {
+      focusSatId: bestId || selectedSatellite,
+      focusSatData: satellites.find((s) => s.id === (bestId || selectedSatellite)) || null,
+      relevantCdms: bestId ? cdms.filter((c) => c.satellite_id === bestId) : [],
+    };
+  }, [cdms, selectedSatellite, satellites]);
 
   const draw = useCallback(
     (time) => {
@@ -77,7 +92,7 @@ export default function BullseyePlot() {
       ctx.fillStyle = '#0d1117';
       ctx.fillRect(0, 0, w, h);
 
-      if (!selectedSatellite) {
+      if (!focusSatId) {
         ctx.fillStyle = '#6b7280';
         ctx.font = '11px Inter, sans-serif';
         ctx.textAlign = 'center';
@@ -199,15 +214,15 @@ export default function BullseyePlot() {
       ctx.font = '9px Inter, monospace';
       ctx.textAlign = 'center';
       ctx.fillText(
-        selectedSatellite.replace('SAT-Alpha-', '\u03b1'),
+        focusSatId.replace('SAT-Alpha-', '\u03b1'),
         cx,
         cy + maxR + 22
       );
-      if (selectedData) {
+      if (focusSatData) {
         ctx.fillStyle = '#6b7280';
         ctx.font = '8px Inter, monospace';
         ctx.fillText(
-          `${selectedData.status} \u00b7 ${selectedData.fuel_kg.toFixed(1)} kg \u00b7 ${relevantCdms.length} CDMs`,
+          `${focusSatData.status} \u00b7 ${focusSatData.fuel_kg.toFixed(1)} kg \u00b7 ${relevantCdms.length} CDMs`,
           cx,
           cy + maxR + 32
         );
@@ -218,7 +233,7 @@ export default function BullseyePlot() {
         animRef.current = requestAnimationFrame(draw);
       }
     },
-    [selectedSatellite, relevantCdms, selectedData, timestamp]
+    [focusSatId, relevantCdms, focusSatData, timestamp]
   );
 
   useEffect(() => {
