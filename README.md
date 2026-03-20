@@ -2,18 +2,18 @@
 
 ### Autonomous Constellation Manager
 
-**J2-Perturbed Orbital Propagation · KDTree Conjunction Assessment · Real-Time WebGL Visualization**
+**J2-Perturbed Orbital Propagation · KDTree Conjunction Assessment · Real-Time Canvas Visualization**
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![Three.js](https://img.shields.io/badge/Three.js-r165-000000?logo=threedotjs&logoColor=white)](https://threejs.org)
+[![Canvas](https://img.shields.io/badge/Canvas_API-2D-FF6347?logo=html5&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API)
 [![Docker](https://img.shields.io/badge/Docker-ubuntu:22.04-2496ED?logo=docker&logoColor=white)](https://docker.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-*A high-performance backend system acting as the centralized brain for 50+ satellites navigating 10,000+ debris objects. Real-time collision prediction, autonomous evasion maneuvers, fuel-optimal trajectory planning, and a 60FPS 3D visualization dashboard — all in a single Docker container.*
+*A high-performance backend system acting as the centralized brain for 50+ satellites navigating 10,000+ debris objects. Real-time collision prediction, autonomous evasion maneuvers, fuel-optimal trajectory planning, and a 60FPS Canvas visualization dashboard — all in a single Docker container.*
 
 </div>
 
@@ -51,7 +51,7 @@ graph TD
 |---|---|---|
 | **Physics Engine** | Python + NumPy + SciPy (DOP853) | Orbital propagation, KDTree conjunction detection, RTN maneuver planning, Tsiolkovsky fuel tracking |
 | **API Layer** | FastAPI + Pydantic + orjson | REST endpoints, request validation, schema translation, structured logging |
-| **Frontend** | React 18 + Three.js + Zustand | 60FPS 3D globe, ground track, bullseye plot, fuel heatmap, maneuver timeline |
+| **Frontend** | React 18 + Canvas API + Zustand | 60FPS 2D ground track, bullseye plot, fuel heatmap, delta-v chart, maneuver timeline |
 
 ---
 
@@ -161,11 +161,11 @@ acm-orbital/
 
 | Criteria | Weight | Strategy |
 |---|---|---|
-| **Safety** | 25% | Zero collisions via 24h prediction horizon, 2km safety margin (20× threshold) |
-| **Fuel Efficiency** | 20% | T-axis burns, recovery reversal, mass-aware Tsiolkovsky |
-| **Uptime** | 15% | Fast recovery burns, 10km station-keeping enforcement |
-| **Speed** | 15% | KDTree O(N log N), DOP853 adaptive stepping, vectorized NumPy |
-| **UI/UX** | 15% | 60FPS Three.js globe, 5 dashboard modules, Web Worker propagation |
+| **Safety** | 25% | Zero collisions via 24h CDM forecast, 200m safety margin (2× threshold), autonomous COLA |
+| **Fuel Efficiency** | 20% | Minimum-energy T-axis phasing burns, 36-point burn-time optimizer, mass-aware Tsiolkovsky, fleet health handshake |
+| **Uptime** | 15% | Dynamic recovery timing (recover when debris &gt;50km), 10km station-keeping box, exponential uptime scoring |
+| **Speed** | 15% | 4-stage KDTree O(S log D), vectorized DOP853 batch propagation, adaptive sub-stepping, NumPy broadcast |
+| **UI/UX** | 15% | 60FPS Canvas rendering, 5 dashboard modules, 10K+ debris batched |
 | **Code Quality** | 10% | Modular 3-layer architecture, type hints, structured logging, pytest |
 
 ---
