@@ -176,7 +176,7 @@ acm-orbital/
 
 ```
 $ python -m pytest tests/ -q
-159 passed, 3 xfailed in 249s
+160 passed, 2 xfailed in 174s
 ```
 
 | Category | Tests | Coverage |

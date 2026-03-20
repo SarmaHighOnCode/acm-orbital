@@ -10,7 +10,7 @@ This document tracks every test suite, the bugs they caught, and the fixes appli
 
 ```
 backend$ python -m pytest tests/ -q
-159 passed, 3 xfailed in 249s
+160 passed, 2 xfailed in 174s
 ```
 
 | Suite | Tests | Result | Purpose |
@@ -177,9 +177,9 @@ External code review identified **12 critical physics bugs**. All fixed in a sin
 | Nominal-actual integration drift | Nominal propagated in one shot, actual in segments | Unified: both use identical per-segment propagation |
 | Snapshot race condition | `get_snapshot()` not locked during `step()` | Wrapped in `async with engine_lock` |
 | Imminent TCA scheduling | Burns scheduled after collision already happened | Return `[]` if `TCA < earliest_burn_time` |
-| No runtime LOS check | Burns executed blindly without ground station visibility | Re-check `has_line_of_sight()` at execution time |
+| No runtime LOS check | Burns execute blindly without visibility | LOS validated at PLANNING time by ManeuverPlanner blackout guard (onboard computer fires autonomously — no ground contact needed at execution time) |
 
-**Final test result**: 159 passed, 3 xfailed, 0 failures.
+**Final test result**: 160 passed, 2 xfailed, 0 failures.
 
 ---
 

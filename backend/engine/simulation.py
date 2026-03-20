@@ -535,12 +535,11 @@ class SimulationEngine:
                     dv_vec = np.array([dv["x"], dv["y"], dv["z"]])
                     dv_mag_ms = float(np.linalg.norm(dv_vec)) * 1000.0
 
-                    # Runtime re-validation: LOS
-                    if not self.gs_network.has_line_of_sight(sat.position):
-                        logger.warning(
-                            "MANEUVER | %s | %s | SKIPPED — no ground station LOS",
-                            sat_id, burn.get("burn_id", "BURN"))
-                        continue
+                    # NOTE: No runtime LOS check here. Burns are uploaded to the
+                    # satellite's onboard computer during planning (when LOS existed).
+                    # The onboard timer fires the thruster autonomously — no ground
+                    # contact needed at execution time. LOS is validated at PLANNING
+                    # time by the ManeuverPlanner's blackout guard.
 
                     # Runtime re-validation: fuel
                     if not self.fuel_tracker.sufficient_fuel(sat_id, dv_mag_ms):
