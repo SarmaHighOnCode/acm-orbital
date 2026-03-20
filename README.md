@@ -170,6 +170,29 @@ acm-orbital/
 
 ---
 
+## 🧪 Testing
+
+**252 test methods across 19 test files** — see [`TESTING.md`](TESTING.md) for the full report.
+
+```
+$ python -m pytest tests/ -q
+159 passed, 3 xfailed in 249s
+```
+
+| Category | Tests | Coverage |
+|----------|------:|----------|
+| Core physics engine | 76 | Propagation, collision, fuel, maneuvers, tick loop |
+| Stress & flood | 51 | 100K ingest, KDTree, ground stations, Tsiolkovsky |
+| Integration (E2E) | 31 | API + engine end-to-end flows |
+| Judge attack vectors | 20 | Burn timing, GMST, fast-path drift, evasion physics |
+| Extreme edge cases | 16 | Boundary conditions, numerical landmines |
+| System destroyers | 15 | Fleet wipeout, race conditions, 50K snapshot |
+| Unit tests | 43 | Individual module validation |
+
+12 critical physics bugs identified by external review, all fixed and regression-tested. Verlet symplectic integrator replaced Euler/Taylor (258,000 km drift reduced to 0.8 km). Full timeline and benchmark results in [`TESTING.md`](TESTING.md).
+
+---
+
 ## 👥 Team
 
 Built with ❤️ at IIT Delhi for Hackathon 2026.
