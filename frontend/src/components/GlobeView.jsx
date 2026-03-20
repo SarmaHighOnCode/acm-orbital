@@ -509,7 +509,7 @@ function GroundStationMarkers() {
   );
 }
 
-/* ── CDM Threat Lines ────────────────────────────────── */
+/* ── CDM Threat Lines (unique keys via index) ────────── */
 function CDMLines() {
   const cdms = useStore((s) => s.cdms);
   const satellites = useStore((s) => s.satellites);
