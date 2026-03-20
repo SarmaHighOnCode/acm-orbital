@@ -138,10 +138,14 @@ class ConjunctionAssessor:
         deb_rp_dict = {did: deb_rp[i] for i, did in enumerate(debris_states.keys())}
         deb_ra_dict = {did: deb_ra[i] for i, did in enumerate(debris_states.keys())}
 
-        # Scale search radius based on lookahead to catch high-velocity (15 km/s) 
-        # head-on pairs. Minimum base threshold is 200km.
-        # Ensure the exact string r=200.0 is present for test_stage2_filter_radius_is_200km.
-        kdtree_radius = max(200.0, 15.0 * lookahead_s)
+        # KDTree search radius: initial-position proximity pre-filter.
+        # For short lookaheads, scale with relative velocity × time.
+        # For long lookaheads (24h), objects complete full orbits so initial
+        # position doesn't predict conjunction — cap radius and rely on the
+        # orbital-element filters (Stage 1 altitude band + per-pair shell)
+        # for correctness.  Cap at 2000 km to keep the KDTree useful as a
+        # spatial index (LEO orbit diameter ≈ 13 000 km).
+        kdtree_radius = max(200.0, min(15.0 * lookahead_s, 2000.0))
 
         for sat_id, sat_state in sat_states.items():
             # query_ball_point eliminates debris far from initial satellite position

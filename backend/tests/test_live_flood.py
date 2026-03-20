@@ -462,15 +462,29 @@ class TestGroundStationLOS:
         lon = math.radians(gs["lon"])
         alt_km = gs["elev_m"] / 1000.0
 
-        # At Unix epoch (t=0) the GMST rotation angle ≈ 0 → ECEF ≈ ECI
-        ts = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2025, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
 
-        # Place satellite 400 km directly above the ground station in ECI
+        # Compute GMST to convert ECEF overhead position → ECI
+        j2000 = datetime(2000, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        dt_s = (ts - j2000).total_seconds()
+        gmst_rad = math.radians(
+            (280.46061837 + 360.98564736629 * (dt_s / 86400.0)) % 360.0
+        )
+
+        # Place satellite 400 km directly above the ground station in ECEF
         r_sat = R_EARTH + alt_km + 400.0
-        sat_eci = r_sat * np.array([
+        sat_ecef = r_sat * np.array([
             math.cos(lat) * math.cos(lon),
             math.cos(lat) * math.sin(lon),
             math.sin(lat),
+        ])
+
+        # Rotate ECEF → ECI by GMST
+        c, s = math.cos(gmst_rad), math.sin(gmst_rad)
+        sat_eci = np.array([
+            c * sat_ecef[0] - s * sat_ecef[1],
+            s * sat_ecef[0] + c * sat_ecef[1],
+            sat_ecef[2],
         ])
 
         network = GroundStationNetwork()
@@ -514,22 +528,37 @@ class TestGroundStationLOS:
         lat = math.radians(gs["lat"])
         lon = math.radians(gs["lon"])
         r   = R_EARTH + 500.0
-        ts  = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        ts  = datetime(2025, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
 
-        # Zenith direction: unit vector pointing from Earth centre to GS
+        # Compute GMST for ECEF→ECI rotation
+        j2000 = datetime(2000, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        dt_s = (ts - j2000).total_seconds()
+        gmst_rad = math.radians(
+            (280.46061837 + 360.98564736629 * (dt_s / 86400.0)) % 360.0
+        )
+
+        # Zenith direction in ECEF: unit vector pointing from Earth centre to GS
         z_hat = np.array([
             math.cos(lat) * math.cos(lon),
             math.cos(lat) * math.sin(lon),
             math.sin(lat),
         ])
-        # Perpendicular direction (in equatorial plane)
+        # Perpendicular direction (in equatorial plane, ECEF)
         perp = np.array([-math.sin(lon), math.cos(lon), 0.0])
 
-        # Satellite at 5° elevation: 85° from zenith
+        # Satellite at 5° elevation: 85° from zenith (in ECEF)
         angle_from_zenith = math.radians(85.0)
         sat_dir = (math.cos(angle_from_zenith) * z_hat
                    + math.sin(angle_from_zenith) * perp)
-        sat_eci = r * sat_dir / np.linalg.norm(sat_dir)
+        sat_ecef = r * sat_dir / np.linalg.norm(sat_dir)
+
+        # Rotate ECEF→ECI by GMST
+        cg, sg = math.cos(gmst_rad), math.sin(gmst_rad)
+        sat_eci = np.array([
+            cg * sat_ecef[0] - sg * sat_ecef[1],
+            sg * sat_ecef[0] + cg * sat_ecef[1],
+            sat_ecef[2],
+        ])
 
         network = GroundStationNetwork()
         el      = network.compute_elevation(sat_eci, gs, ts)
@@ -546,16 +575,31 @@ class TestGroundStationLOS:
     def test_all_six_stations_grant_los_overhead(self):
         """Every station must grant LOS when satellite is directly overhead."""
         network = GroundStationNetwork()
-        ts      = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        ts      = datetime(2025, 3, 21, 12, 0, 0, tzinfo=timezone.utc)
+
+        # Compute GMST for ECEF→ECI rotation
+        j2000 = datetime(2000, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        dt_s = (ts - j2000).total_seconds()
+        gmst_rad = math.radians(
+            (280.46061837 + 360.98564736629 * (dt_s / 86400.0)) % 360.0
+        )
+        cg, sg = math.cos(gmst_rad), math.sin(gmst_rad)
 
         for gs in GROUND_STATIONS:
             lat = math.radians(gs["lat"])
             lon = math.radians(gs["lon"])
             r   = R_EARTH + 500.0
-            sat_eci = r * np.array([
+            # ECEF overhead position
+            sat_ecef = r * np.array([
                 math.cos(lat) * math.cos(lon),
                 math.cos(lat) * math.sin(lon),
                 math.sin(lat),
+            ])
+            # Rotate ECEF→ECI by GMST
+            sat_eci = np.array([
+                cg * sat_ecef[0] - sg * sat_ecef[1],
+                sg * sat_ecef[0] + cg * sat_ecef[1],
+                sat_ecef[2],
             ])
             assert network.check_line_of_sight(sat_eci, ts), \
                 f"Station {gs['id']} must grant LOS overhead"
@@ -1034,8 +1078,12 @@ class TestHardConstraints:
 
     # ── 3.18  Cooldown boundary: 600 s rejected, 601 s accepted ──────────────
 
-    def test_cooldown_exactly_600s_rejected(self):
-        """Burn exactly 600 s after last burn must be REJECTED (exclusive boundary)."""
+    def test_cooldown_exactly_600s_accepted(self):
+        """Burn exactly 600 s after last burn must be ACCEPTED.
+
+        PRD §4.5: 'mandatory 600-second rest period' — at exactly 600 s
+        the rest period IS complete.
+        """
         planner = ManeuverPlanner()
         now  = datetime.now(timezone.utc)
         last = now - timedelta(seconds=570)          # last burn 570 s ago
@@ -1048,7 +1096,7 @@ class TestHardConstraints:
             last_burn_time=last,
             has_los=True,
         )
-        assert not valid, "Cooldown boundary: exactly 600 s must be REJECTED"
+        assert valid, "Cooldown boundary: exactly 600 s must be ACCEPTED (rest complete)"
 
     def test_cooldown_601s_accepted(self):
         """Burn 601 s after last burn must be ACCEPTED."""

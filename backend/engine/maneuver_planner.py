@@ -146,11 +146,13 @@ class ManeuverPlanner:
                 t_candidate += timedelta(seconds=300)
                 continue
 
-            # Physics-based delta-v: dT = target_miss / (6 * dt_lead) [km/s]
-            # Convert to m/s
-            candidate_dv_ms = (TARGET_MISS_KM / (6.0 * dt_lead)) * 1000.0
+            # Physics-based delta-v: ΔV = target_miss / dt_lead
+            # This gives the cross-track displacement needed to achieve target miss
+            # distance. Works for both co-orbital (CW phasing) and crossing
+            # (head-on retrograde) encounter geometries.
+            candidate_dv_ms = (TARGET_MISS_KM / dt_lead) * 1000.0
 
-            # Ensure minimum effectiveness
+            # Ensure minimum effectiveness (1 m/s floor for very long lead times)
             candidate_dv_ms = max(1.0, candidate_dv_ms)
 
             # Check LOS: propagate satellite to candidate time to get position
@@ -177,7 +179,7 @@ class ManeuverPlanner:
         if best_burn_time is None:
             best_burn_time = max(earliest_burn_time, tca - timedelta(seconds=1800))
             dt_lead = max(1.0, (tca - best_burn_time).total_seconds())
-            best_dv_ms = max(2.0, (TARGET_MISS_KM / (6.0 * dt_lead)) * 1000.0)
+            best_dv_ms = max(2.0, (TARGET_MISS_KM / dt_lead) * 1000.0)
 
         burn_time = best_burn_time
         dv_mag_ms = best_dv_ms
@@ -427,7 +429,21 @@ class ManeuverPlanner:
         
         # 4. Burn 1 implementation (Immediate/ASAP)
         burn_time1 = current_time + timedelta(seconds=SIGNAL_LATENCY_S)
-        dv_eci1 = Q @ delta_v1_rtn
+        # Recompute RTN frame at the burn epoch (not planning epoch) for accuracy
+        if self.propagator:
+            sv_at_b1 = self.propagator.propagate(
+                override_state if override_state is not None else satellite.state_vector,
+                SIGNAL_LATENCY_S,
+            )
+            nom_at_b1 = self.propagator.propagate(nominal_state, SIGNAL_LATENCY_S)
+            r_hat_b1 = nom_at_b1[:3] / np.linalg.norm(nom_at_b1[:3])
+            h_b1 = np.cross(nom_at_b1[:3], nom_at_b1[3:])
+            n_hat_b1 = h_b1 / np.linalg.norm(h_b1)
+            t_hat_b1 = np.cross(n_hat_b1, r_hat_b1)
+            Q_b1 = np.column_stack([r_hat_b1, t_hat_b1, n_hat_b1])
+            dv_eci1 = Q_b1 @ delta_v1_rtn
+        else:
+            dv_eci1 = Q @ delta_v1_rtn
         
         # Magnitude capping
         mag1 = np.linalg.norm(dv_eci1) * 1000.0
@@ -549,7 +565,7 @@ class ManeuverPlanner:
 
         if last_burn_time is not None:
             cooldown_elapsed = (burn_time - last_burn_time).total_seconds()
-            if cooldown_elapsed <= THRUSTER_COOLDOWN_S:
+            if cooldown_elapsed < THRUSTER_COOLDOWN_S:
                 return False, f"Violates {THRUSTER_COOLDOWN_S}s thruster cooldown"
 
         if not has_los:

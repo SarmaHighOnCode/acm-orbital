@@ -32,7 +32,7 @@ from typing import Callable
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from config import MU_EARTH, J2, R_EARTH
+from config import MU_EARTH, J2, R_EARTH  # noqa: F401 — J2/R_EARTH used in fast_batch too
 
 
 class OrbitalPropagator:
@@ -83,19 +83,32 @@ class OrbitalPropagator:
         pos = state_arr[:, :3]  # (N, 3)
         vel = state_arr[:, 3:]  # (N, 3)
 
-        # Simple Keplerian propagation: r_new = r + v*dt + 0.5*a*dt²
-        # For debris tracking this is sufficient for short intervals
+        # Keplerian + J2 secular propagation: r_new = r + v*dt + 0.5*a*dt²
+        # Includes J2 perturbation so debris drift is physically correct.
+        x = pos[:, 0]
+        y = pos[:, 1]
+        z = pos[:, 2]
         r = np.linalg.norm(pos, axis=1, keepdims=True)  # (N, 1)
+        r_scalar = r.squeeze()  # (N,)
 
         # Two-body acceleration: a = -μ/r³ * r
         a_gravity = -MU_EARTH * pos / (r ** 3)  # (N, 3)
 
+        # J2 perturbation (same formulation as _vectorized_derivatives)
+        factor = 1.5 * J2 * MU_EARTH * R_EARTH ** 2 / (r_scalar ** 5)
+        z2_r2 = (z / r_scalar) ** 2
+        coeff_xy = factor * (5.0 * z2_r2 - 1.0)
+        coeff_z = factor * (5.0 * z2_r2 - 3.0)
+        a_j2 = np.column_stack([x * coeff_xy, y * coeff_xy, z * coeff_z])
+
+        a_total = a_gravity + a_j2  # (N, 3)
+
         # Position update: r + v*dt + 0.5*a*dt²
         dt = dt_seconds
-        new_pos = pos + vel * dt + 0.5 * a_gravity * (dt ** 2)
+        new_pos = pos + vel * dt + 0.5 * a_total * (dt ** 2)
 
         # Velocity update: v + a*dt
-        new_vel = vel + a_gravity * dt
+        new_vel = vel + a_total * dt
 
         # Pack results
         new_states = np.column_stack([new_pos, new_vel])  # (N, 6)

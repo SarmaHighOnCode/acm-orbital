@@ -35,6 +35,7 @@ from config import (
     ISP,
     G0,
     M_DRY,
+    MU_EARTH,
     RTOL,
     ATOL,
 )
@@ -48,42 +49,71 @@ from engine.ground_stations import GroundStationNetwork
 logger = logging.getLogger("acm.engine.simulation")
 
 
-def _eci_to_lla(position: np.ndarray) -> tuple[float, float, float]:
-    """Convert ECI position [x, y, z] km to (lat_deg, lon_deg, alt_km)."""
+_J2000_EPOCH = datetime(2000, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+_WGS84_F = 1.0 / 298.257223563   # WGS84 flattening
+
+
+def _gmst_rad(sim_time: datetime) -> float:
+    """Compute Greenwich Mean Sidereal Time in radians."""
+    dt_seconds = (sim_time - _J2000_EPOCH).total_seconds()
+    gmst_deg = 280.46061837 + 360.98564736629 * (dt_seconds / 86400.0)
+    return np.radians(gmst_deg % 360.0)
+
+
+def _eci_to_lla(position: np.ndarray, sim_time: datetime) -> tuple[float, float, float]:
+    """Convert ECI position [x, y, z] km to (lat_deg, lon_deg, alt_km).
+
+    Accounts for Earth rotation (GMST) to obtain geodetic longitude, and
+    uses WGS84 ellipsoidal approximation for altitude.
+    """
     x, y, z = position
     r = np.linalg.norm(position)
-    alt_km = r - 6378.137
-    lat_deg = float(np.degrees(np.arcsin(np.clip(z / r, -1.0, 1.0))))
-    lon_deg = float(np.degrees(np.arctan2(y, x)))
+    lat_rad = np.arcsin(np.clip(z / r, -1.0, 1.0))
+    lat_deg = float(np.degrees(lat_rad))
+
+    # Longitude = Right Ascension − GMST
+    ra = np.arctan2(y, x)
+    lon_rad = ra - _gmst_rad(sim_time)
+    lon_deg = float(np.degrees(lon_rad))
+    lon_deg = ((lon_deg + 180.0) % 360.0) - 180.0
+
+    # WGS84 ellipsoidal local Earth radius: R(lat) ≈ R_eq * (1 − f·sin²(lat))
+    r_local = 6378.137 * (1.0 - _WGS84_F * np.sin(lat_rad) ** 2)
+    alt_km = r - r_local
+
     return lat_deg, lon_deg, alt_km
 
 
-def _eci_to_lla_batch(positions: np.ndarray) -> np.ndarray:
+def _eci_to_lla_batch(positions: np.ndarray, sim_time: datetime) -> np.ndarray:
     """Convert a batch of ECI positions [x, y, z] km to (lat, lon, alt).
-    
+
     Args:
         positions: shape (N, 3) in km.
-        
+        sim_time:  Current simulation time (UTC, tz-aware).
+
     Returns:
         np.ndarray of shape (N, 3) where columns are (lat_deg, lon_deg, alt_km).
     """
     if positions.size == 0:
         return np.empty((0, 3))
-    
+
     r = np.linalg.norm(positions, axis=1)
-    # Earth radius (km) - use same constant as elsewhere if possible, 
-    # but 6378.137 is the standard WGS84 semi-major axis.
-    alt_km = r - 6378.137
-    
-    # Avoid div by zero
     r_safe = np.where(r == 0, 1.0, r)
-    
-    # lat = arcsin(z/r)
-    lat_deg = np.degrees(np.arcsin(np.clip(positions[:, 2] / r_safe, -1.0, 1.0)))
-    
-    # lon = arctan2(y, x)
-    lon_deg = np.degrees(np.arctan2(positions[:, 1], positions[:, 0]))
-    
+
+    # Geocentric latitude
+    lat_rad = np.arcsin(np.clip(positions[:, 2] / r_safe, -1.0, 1.0))
+    lat_deg = np.degrees(lat_rad)
+
+    # Geodetic longitude = Right Ascension − GMST
+    ra = np.arctan2(positions[:, 1], positions[:, 0])
+    gmst = _gmst_rad(sim_time)
+    lon_deg = np.degrees(ra - gmst)
+    lon_deg = ((lon_deg + 180.0) % 360.0) - 180.0
+
+    # WGS84 ellipsoidal altitude
+    r_local = 6378.137 * (1.0 - _WGS84_F * np.sin(lat_rad) ** 2)
+    alt_km = r - r_local
+
     return np.column_stack([lat_deg, lon_deg, alt_km])
 
 
@@ -332,7 +362,11 @@ class SimulationEngine:
         }
 
     def step(self, step_seconds: int) -> dict:
-        """Advance the simulation clock and execute the full 7-step physics tick.
+        """Advance the simulation clock and execute the full physics tick.
+
+        **Sub-step burn execution**: Burns are applied at their scheduled times
+        DURING propagation, not after.  The step is split into segments at each
+        burn boundary so that the post-burn trajectory is physically correct.
 
         Called by: POST /api/simulate/step
 
@@ -357,119 +391,144 @@ class SimulationEngine:
                 "maneuvers_executed": 0,
             }
 
-        # ── Pre-calculation: Determine sub-sampling needs ──
-        # Adaptive sub-interval: use finer resolution for shorter steps,
-        # coarser for very long steps (24h soak) to maintain performance.
+        # ── Sub-sampling parameters for collision scan ──
         if step_seconds <= 3600:
-            _sub_interval = 300.0    # 5-min samples for steps <= 1h
+            _sub_interval = 300.0
         elif step_seconds <= 21600:
-            _sub_interval = 600.0    # 10-min samples for steps <= 6h
+            _sub_interval = 600.0
         else:
-            _sub_interval = 1800.0   # 30-min samples for steps > 6h (24h soak)
+            _sub_interval = 1800.0
         _n_sub = max(1, min(int(step_seconds / _sub_interval), 72))
-        
-        # ── Step 1: Propagate all objects ──
-        # Satellites: actual states
-        sat_states = {sid: sat.state_vector for sid, sat in self.satellites.items()}
-        
-        # Satellites: nominal slot reference orbits
+        # Relative sample times within the step (seconds from old_time)
+        _sample_times_rel = [step_seconds * float(f)
+                             for f in np.linspace(0.0, 1.0, _n_sub + 1)[1:]]
+
+        # ── Propagate nominal slots for the full step (unaffected by burns) ──
         nominal_states = {sid: sat.nominal_state for sid, sat in self.satellites.items()}
-        new_nominal_states = self.propagator.propagate_batch(nominal_states, step_seconds)
-        for sid, new_sv in new_nominal_states.items():
-            self.satellites[sid].nominal_state = new_sv
+        if nominal_states:
+            new_nominal = self.propagator.propagate_batch(nominal_states, step_seconds)
+            for sid, sv in new_nominal.items():
+                self.satellites[sid].nominal_state = sv
 
-        # Debris cloud
-        deb_states = {did: deb.state_vector for did, deb in self.debris.items()}
-        
-        # Decide on propagation method: Dense or Fast or Batch
-        _sat_dense_sol = None
-        _deb_dense_sol = None
-        _sat_dense_ids = []
-        _deb_dense_ids = []
-
-        if _n_sub > 1 and self.satellites:
-            # Perform dense propagation once and reuse for collisions and final state
-            _sat_dense_ids, _sat_dense_sol = self.propagator.propagate_dense_batch(sat_states, step_seconds)
-            new_sat_states_arr = _sat_dense_sol(step_seconds)
-            new_sat_states = dict(zip(_sat_dense_ids, new_sat_states_arr))
-            
-            if self.debris:
-                _deb_dense_ids, _deb_dense_sol = self.propagator.propagate_dense_batch(deb_states, step_seconds)
-                new_deb_states_arr = _deb_dense_sol(step_seconds)
-                new_deb_states = dict(zip(_deb_dense_ids, new_deb_states_arr))
-            else:
-                new_deb_states = {}
-        else:
-            # Standard propagation
-            new_sat_states = self.propagator.propagate_batch(sat_states, step_seconds)
-            
-            if step_seconds <= 600 and len(deb_states) > 100:
-                new_deb_states = OrbitalPropagator.propagate_fast_batch(deb_states, step_seconds)
-            else:
-                new_deb_states = self.propagator.propagate_batch(deb_states, step_seconds)
-
-        # Update final states
-        for sid, new_sv in new_sat_states.items():
-            self.satellites[sid].state_vector = new_sv
-        for did, new_sv in new_deb_states.items():
-            self.debris[did].state_vector = new_sv
-
-        # ── Step 2: Execute scheduled maneuvers (with chronological order) ──
+        # ── Collect and sort all burns in this step window ──
+        all_window_burns: list[tuple[datetime, str, dict]] = []
         for sat_id, sat in self.satellites.items():
-            # Ensure maneuvers are executed in chronological order
             sat.maneuver_queue.sort(key=lambda x: x["burnTime"])
-            
-            remaining_queue: list[dict] = []
+            pending: list[dict] = []
             for burn in sat.maneuver_queue:
-                burn_time = datetime.fromisoformat(
-                    burn["burnTime"].replace("Z", "+00:00")
-                )
-                if burn_time < old_time:
-                    logger.warning(
-                        "MANEUVER | %s | Discarding stale burn %s (scheduled %s, now %s)",
-                        sat_id,
-                        burn.get("burn_id", "BURN"),
-                        burn_time.isoformat(),
-                        old_time.isoformat(),
-                    )
-                    continue
+                bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
+                if bt <= old_time:
+                    logger.warning("MANEUVER | %s | Discarding stale burn", sat_id)
+                elif bt <= target_time:
+                    all_window_burns.append((bt, sat_id, burn))
+                else:
+                    pending.append(burn)
+            sat.maneuver_queue = pending
+        all_window_burns.sort(key=lambda x: x[0])
 
-                if burn_time <= target_time:
-                    dv     = burn["deltaV_vector"]
-                    dv_vec = np.array([dv["x"], dv["y"], dv["z"]])   # km/s
+        # Group burns by exact time
+        burns_at: dict[float, list[tuple[str, dict]]] = {}
+        for bt, sid, burn in all_window_burns:
+            t_rel = (bt - old_time).total_seconds()
+            burns_at.setdefault(t_rel, []).append((sid, burn))
+
+        # Segment boundaries (relative seconds from old_time)
+        seg_bounds = sorted(set(
+            [0.0] + list(burns_at.keys()) + [float(step_seconds)]
+        ))
+
+        # ── Debris: single dense propagation for the full step ──
+        _deb_ids: list[str] = list(self.debris.keys())
+        _deb_dense_sol = None
+        if _deb_ids:
+            deb_states_init = {did: deb.state_vector for did, deb in self.debris.items()}
+            if step_seconds <= 600 and len(_deb_ids) > 100:
+                new_deb_final = OrbitalPropagator.propagate_fast_batch(
+                    deb_states_init, step_seconds
+                )
+            else:
+                _deb_dense_ids_list, _deb_dense_sol = \
+                    self.propagator.propagate_dense_batch(deb_states_init, step_seconds)
+                new_deb_final = dict(zip(
+                    _deb_dense_ids_list, _deb_dense_sol(step_seconds)
+                ))
+            for did, sv in new_deb_final.items():
+                self.debris[did].state_vector = sv
+
+        # ── Satellites: segmented propagation with mid-step burns ──
+        # Track satellite positions at each collision-scan sample time.
+        saved_sat_pos: dict[float, dict[str, np.ndarray]] = {}
+
+        for seg_idx in range(len(seg_bounds) - 1):
+            seg_start = seg_bounds[seg_idx]
+            seg_end   = seg_bounds[seg_idx + 1]
+            seg_dt    = seg_end - seg_start
+            if seg_dt <= 0:
+                continue
+
+            # Which collision-scan samples fall in (seg_start, seg_end]?
+            seg_samples = [t for t in _sample_times_rel
+                           if seg_start < t <= seg_end]
+
+            cur_sat_states = {
+                sid: sat.state_vector for sid, sat in self.satellites.items()
+            }
+
+            if seg_samples and len(cur_sat_states) > 0:
+                # Dense propagation for this segment (needed for sub-sampling)
+                seg_ids, seg_sol = self.propagator.propagate_dense_batch(
+                    cur_sat_states, seg_dt
+                )
+                for t_sample in seg_samples:
+                    t_in_seg = t_sample - seg_start
+                    sv_at_t = seg_sol(t_in_seg)   # (S, 6)
+                    saved_sat_pos[t_sample] = {
+                        seg_ids[j]: sv_at_t[j, :3].copy()
+                        for j in range(len(seg_ids))
+                    }
+                # Advance satellites to segment end
+                final_seg = seg_sol(seg_dt)
+                for j, sid in enumerate(seg_ids):
+                    self.satellites[sid].state_vector = final_seg[j].copy()
+            elif cur_sat_states:
+                # No sub-samples needed — standard batch propagation
+                new_sat = self.propagator.propagate_batch(cur_sat_states, seg_dt)
+                for sid, sv in new_sat.items():
+                    self.satellites[sid].state_vector = sv
+
+            # ── Apply burns at this segment boundary ──
+            if seg_end in burns_at:
+                seg_end_dt = old_time + timedelta(seconds=seg_end)
+                for sat_id, burn in burns_at[seg_end]:
+                    sat = self.satellites[sat_id]
+                    dv = burn["deltaV_vector"]
+                    dv_vec = np.array([dv["x"], dv["y"], dv["z"]])
                     dv_mag_ms = float(np.linalg.norm(dv_vec)) * 1000.0
 
-                    # ── Runtime re-validation ──────────────────────────────
-                    # Fuel sufficiency: conditions may have changed since
-                    # scheduling (earlier burns in this tick consumed fuel).
+                    # Runtime re-validation: fuel
                     if not self.fuel_tracker.sufficient_fuel(sat_id, dv_mag_ms):
                         logger.warning(
-                            "MANEUVER | %s | %s | SKIPPED — insufficient fuel at execution",
-                            sat_id, burn.get("burn_id", "BURN"),
-                        )
+                            "MANEUVER | %s | %s | SKIPPED — insufficient fuel",
+                            sat_id, burn.get("burn_id", "BURN"))
                         continue
-
-                    # Cooldown re-check: a preceding burn executed in this
-                    # same tick may have updated last_burn_time.
+                    # Runtime re-validation: cooldown
                     if sat.last_burn_time is not None:
-                        cooldown_gap = (burn_time - sat.last_burn_time).total_seconds()
-                        if cooldown_gap < THRUSTER_COOLDOWN_S:
+                        gap = (seg_end_dt - sat.last_burn_time).total_seconds()
+                        if gap < THRUSTER_COOLDOWN_S:
                             logger.warning(
-                                "MANEUVER | %s | %s | SKIPPED — cooldown violation at execution (%.0fs < %.0fs)",
-                                sat_id, burn.get("burn_id", "BURN"),
-                                cooldown_gap, THRUSTER_COOLDOWN_S,
-                            )
+                                "MANEUVER | %s | %s | SKIPPED — cooldown (%.0fs)",
+                                sat_id, burn.get("burn_id", "BURN"), gap)
                             continue
 
-                    sat.velocity      = sat.velocity + dv_vec
+                    # Execute burn: apply ΔV at the correct epoch
+                    sat.velocity += dv_vec
                     fuel_before = self.fuel_tracker.get_fuel(sat_id)
                     self.fuel_tracker.consume(sat_id, dv_mag_ms)
-                    sat.fuel_kg        = self.fuel_tracker.get_fuel(sat_id)
-                    sat.last_burn_time = burn_time
-                    sat.status         = "EVADING"
+                    sat.fuel_kg = self.fuel_tracker.get_fuel(sat_id)
+                    sat.last_burn_time = seg_end_dt
+                    sat.status = "EVADING"
                     maneuvers_executed += 1
 
-                    # Structured JSON log (Code Quality)
                     burn_id_str = burn.get("burn_id", "BURN")
                     if "RTS" in burn_id_str.upper() or "RECOVERY" in burn_id_str.upper():
                         burn_type = "RECOVERY"
@@ -482,7 +541,7 @@ class SimulationEngine:
                     log_entry = {
                         "event": "BURN_EXECUTED",
                         "type": burn_type,
-                        "timestamp": burn_time.isoformat(),
+                        "timestamp": seg_end_dt.isoformat(),
                         "satellite_id": sat_id,
                         "burn_id": burn_id_str,
                         "delta_v_magnitude_ms": round(dv_mag_ms, 4),
@@ -497,16 +556,8 @@ class SimulationEngine:
                     }
                     logger.info("MANEUVER | %s", json.dumps(log_entry))
                     self.maneuver_log.append(log_entry)
-                else:
-                    remaining_queue.append(burn)
-            sat.maneuver_queue = remaining_queue
 
-        # ── Step 3: Conjunction assessment & instantaneous collision scan ──────
-        # 3a. Full 24-hour CDM scan via the 4-stage KDTree pipeline — O(S log D + k·F)
-        # PRD §2 requires forecasting conjunctions up to 24 hours in the future so that
-        # evasion burns can be pre-scheduled before blackout windows.  The KDTree pipeline's
-        # altitude-band pre-filter (Stage 1) eliminates ~85 % of debris before any propagation,
-        # keeping Stage 3 TCA refinement cheap even at full 24-hour horizon.
+        # ── Step 3a: 24-hour CDM scan (uses final post-burn states) ──
         sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
         self.active_cdms = self.assessor.assess(
             sat_states_snapshot,
@@ -514,126 +565,137 @@ class SimulationEngine:
             lookahead_s=86400.0,
             current_time=target_time,
         )
-        # Add Sat-vs-Sat pass
         self.active_cdms.extend(self.assessor.assess_sat_vs_sat(
             sat_states_snapshot,
             lookahead_s=86400.0,
             current_time=target_time,
         ))
 
-        # 3b. Multi-sample collision scan across the step interval.
-        if self.satellites and self.debris:
-            _deb_ids: list[str] = list(self.debris.keys())
-            _sat_ids: list[str] = list(self.satellites.keys())
-
-            # Always include the endpoint (t=step_seconds)
-            _sub_fractions = np.linspace(0.0, 1.0, _n_sub + 1)[1:]  # skip t=0 (pre-step)
-
-            # Track already-logged collision pairs to avoid double-counting
+        # ── Step 3b: Collision scan at sub-samples (burn-aware) ──
+        if self.satellites and self.debris and _deb_ids:
             _logged_pairs: set[tuple[str, str]] = set()
 
-            for frac in _sub_fractions:
-                t_sample = step_seconds * float(frac)
+            for t_sample in _sample_times_rel:
                 sample_time = old_time + timedelta(seconds=t_sample)
 
-                if _n_sub > 1 and frac < 1.0:
-                    # Evaluate dense polynomial at intermediate t (reused from Step 1)
-                    _all_sat_states = _sat_dense_sol(t_sample)  # (S, 6)
-                    _all_deb_states = _deb_dense_sol(t_sample)  # (D, 6)
-                    _sat_pos = _all_sat_states[:, :3]
-                    _deb_pos = _all_deb_states[:, :3]
+                # Satellite positions: from saved sub-sample data or final state
+                if t_sample in saved_sat_pos:
+                    sp = saved_sat_pos[t_sample]
+                    _sat_ids_at_t = list(sp.keys())
+                    _sat_pos = np.array([sp[sid] for sid in _sat_ids_at_t])
                 else:
-                    # Endpoint: use already-propagated final positions
-                    _sat_pos = np.array([self.satellites[sid].position for sid in _sat_ids])
-                    _deb_pos = np.array([self.debris[did].position for did in _deb_ids])
+                    _sat_ids_at_t = list(self.satellites.keys())
+                    _sat_pos = np.array([
+                        self.satellites[sid].position for sid in _sat_ids_at_t
+                    ])
+
+                # Debris positions: from dense solution or final state
+                if _deb_dense_sol is not None:
+                    _all_deb = _deb_dense_sol(t_sample)
+                    _deb_pos = _all_deb[:, :3]
+                    _deb_ids_at_t = _deb_dense_ids_list
+                else:
+                    _deb_ids_at_t = _deb_ids
+                    _deb_pos = np.array([
+                        self.debris[did].position for did in _deb_ids_at_t
+                    ])
+
+                if len(_sat_pos) == 0 or len(_deb_pos) == 0:
+                    continue
 
                 _deb_tree = _KDTree(_deb_pos)
-                hit_lists = _deb_tree.query_ball_point(_sat_pos, r=CONJUNCTION_THRESHOLD_KM)
+                hit_lists = _deb_tree.query_ball_point(
+                    _sat_pos, r=CONJUNCTION_THRESHOLD_KM
+                )
 
-                for s_idx, neighbor_indices in enumerate(hit_lists):
-                    if not neighbor_indices:
+                for s_idx, neighbors in enumerate(hit_lists):
+                    if not neighbors:
                         continue
-                    s_id = _sat_ids[s_idx] if frac == 1.0 or _n_sub <= 1 else _sat_dense_ids[s_idx]
-                    for deb_idx in neighbor_indices:
-                        d_id = _deb_ids[deb_idx] if frac == 1.0 or _n_sub <= 1 else _deb_dense_ids[deb_idx]
-                        pair_key = (s_id, d_id)
-                        if pair_key in _logged_pairs:
+                    s_id = _sat_ids_at_t[s_idx]
+                    for deb_idx in neighbors:
+                        d_id = _deb_ids_at_t[deb_idx]
+                        pair = (s_id, d_id)
+                        if pair in _logged_pairs:
                             continue
-                        _logged_pairs.add(pair_key)
-                        dist = float(np.linalg.norm(_sat_pos[s_idx] - _deb_pos[deb_idx]))
+                        _logged_pairs.add(pair)
+                        dist = float(np.linalg.norm(
+                            _sat_pos[s_idx] - _deb_pos[deb_idx]
+                        ))
                         collisions_detected += 1
                         self.collision_count += 1
-                        collision_entry = {
+                        entry = {
                             "event": "COLLISION",
                             "timestamp": sample_time.isoformat(),
                             "satellite_id": s_id,
-                            "debris_id":    d_id,
-                            "distance_km":  round(dist, 4),
+                            "debris_id": d_id,
+                            "distance_km": round(dist, 4),
                         }
-                        logger.critical("COLLISION | %s", json.dumps(collision_entry))
-                        self.collision_log.append(collision_entry)
+                        logger.critical("COLLISION | %s", json.dumps(entry))
+                        self.collision_log.append(entry)
 
-        # ── Step 4: Station-keeping status + Uptime tracking ─────────────────
+        # ── Step 4: Station-keeping status + Uptime tracking ──
         for sat in self.satellites.values():
             if sat.status == "EOL":
-                continue   # terminal state — never overwrite
-            
-            slot_offset = float(np.linalg.norm(sat.position - sat.nominal_state[:3]))
-            in_slot     = slot_offset <= STATION_KEEPING_RADIUS_KM
-            
-            # Uptime tracking: accumulate seconds outside station-keeping box
+                continue
+
+            slot_offset = float(np.linalg.norm(
+                sat.position - sat.nominal_state[:3]
+            ))
+            in_slot = slot_offset <= STATION_KEEPING_RADIUS_KM
+
             if not in_slot:
                 self.time_outside_box[sat.id] = (
                     self.time_outside_box.get(sat.id, 0.0) + step_seconds
                 )
-            
-            # Transition logic (PRD §4.7)
+
             if sat.status == "EVADING" and sat.maneuver_queue:
-                # Still in the middle of an evasion sequence
                 continue
-            
+
             if in_slot:
                 sat.status = "NOMINAL"
             else:
                 sat.status = "RECOVERING"
-            
-            # ── LEO Altitude Constraint Check (200-2000 km) ──
-            _, _, alt = _eci_to_lla(sat.position)
+
+            _, _, alt = _eci_to_lla(sat.position, target_time)
             if not (200.0 <= alt <= 2000.0):
                 logger.warning(
-                    "CONSTRAINTS | %s | Altitude Violations: %.1f km (LEO: 200-2000 km)",
-                    sat.id, alt
+                    "CONSTRAINTS | %s | Altitude %.1f km outside LEO band",
+                    sat.id, alt,
                 )
 
-            # If recovering but no plan queued, calculate one (Hill's Equations)
             if sat.status == "RECOVERING" and not sat.maneuver_queue:
                 rts_burns = self.planner.plan_return_to_slot(
                     satellite=sat,
                     nominal_state=sat.nominal_state,
-                    current_time=target_time
+                    current_time=target_time,
                 )
                 if rts_burns:
-                    # Strip internal '_mag' key before queuing
-                    sanitized = [{k: v for k, v in b.items() if not k.startswith('_')} 
-                                for b in rts_burns]
+                    sanitized = [
+                        {k: v for k, v in b.items() if not k.startswith('_')}
+                        for b in rts_burns
+                    ]
                     sat.maneuver_queue.extend(sanitized)
-                    logger.info("RTS-PLAN | %s | Queued 2-impulse recovery (offset=%.2f km)", 
-                                sat.id, slot_offset)
+                    logger.info(
+                        "RTS-PLAN | %s | Queued recovery (offset=%.2f km)",
+                        sat.id, slot_offset,
+                    )
 
-        # ── Step 5: Auto-plan maneuvers for CRITICAL conjunctions ──────────────
+        # ── Step 5: Auto-plan evasion maneuvers ──
         self._auto_plan_maneuvers(target_time)
 
-        # ── Step 6: EOL threshold check ────────────────────────────────────────
+        # ── Step 6: EOL threshold check ──
         for sat_id, sat in self.satellites.items():
             if self.fuel_tracker.is_eol(sat_id) and sat.status != "EOL":
                 sat.status = "EOL"
-                # Queue a small retrograde graveyard burn to lower orbit (de-orbit)
                 remaining_fuel = self.fuel_tracker.get_fuel(sat_id)
                 if remaining_fuel > 0.1 and not sat.maneuver_queue:
-                    earliest_burn = target_time + timedelta(seconds=SIGNAL_LATENCY_S + 60)
-                    # Propagate dense over ~1 orbit to find a LOS window (PRD §4.4)
+                    earliest_burn = target_time + timedelta(
+                        seconds=SIGNAL_LATENCY_S + 60
+                    )
                     _EOL_SEARCH_S = 6000
-                    dense_eol = self.propagator.propagate_dense(sat.state_vector, _EOL_SEARCH_S)
+                    dense_eol = self.propagator.propagate_dense(
+                        sat.state_vector, _EOL_SEARCH_S
+                    )
                     graveyard_time: datetime | None = None
                     test_t = earliest_burn
                     while (test_t - target_time).total_seconds() <= _EOL_SEARCH_S:
@@ -645,11 +707,23 @@ class SimulationEngine:
                         test_t += timedelta(seconds=60)
 
                     if graveyard_time is not None:
-                        # Compute RTN→ECI at burn epoch (not planning epoch)
                         dt_burn = (graveyard_time - target_time).total_seconds()
                         sv_at_burn = dense_eol(dt_burn)
-                        dv_rtn = np.array([0.0, -0.0005, 0.0])  # km/s retrograde
-                        dv_eci = self.planner.rtn_to_eci(sv_at_burn[:3], sv_at_burn[3:], dv_rtn)
+                        # Hohmann-style de-orbit: lower perigee to ~150 km
+                        # ΔV ≈ −v_circ × (1 − sqrt(r_target / r_current)) retrograde
+                        r_cur = np.linalg.norm(sv_at_burn[:3])
+                        v_circ = np.sqrt(MU_EARTH / r_cur)
+                        r_target = 6378.137 + 150.0  # 150 km perigee
+                        dv_retro_kms = v_circ * (1.0 - np.sqrt(r_target / r_cur))
+                        # Cap to remaining fuel capability
+                        max_dv_kms = remaining_fuel * ISP * G0 / (
+                            (M_DRY + remaining_fuel) * 1000.0
+                        )
+                        dv_retro_kms = min(dv_retro_kms, max_dv_kms * 0.9)
+                        dv_rtn = np.array([0.0, -dv_retro_kms, 0.0])
+                        dv_eci = self.planner.rtn_to_eci(
+                            sv_at_burn[:3], sv_at_burn[3:], dv_rtn
+                        )
                         sat.maneuver_queue.append({
                             "burn_id": f"GRAVEYARD_{sat_id}",
                             "burnTime": graveyard_time.isoformat(),
@@ -660,24 +734,20 @@ class SimulationEngine:
                             },
                         })
                         logger.warning(
-                            "EOL | %s | Graveyard maneuver scheduled for %s",
-                            sat_id, graveyard_time.isoformat(),
+                            "EOL | %s | Graveyard burn ΔV=%.3f km/s at %s",
+                            sat_id, dv_retro_kms, graveyard_time.isoformat(),
                         )
                     else:
                         logger.warning(
-                            "EOL | %s | No LOS window in %.0fs horizon; "
-                            "graveyard burn deferred to next step",
-                            sat_id, _EOL_SEARCH_S,
+                            "EOL | %s | No LOS window; graveyard deferred",
+                            sat_id,
                         )
                 logger.warning(
-                    "EOL | %s | Fuel=%.2f kg ≤ threshold (%.1f kg) | "
-                    "Graveyard maneuver scheduled",
-                    sat_id,
-                    remaining_fuel,
-                    EOL_FUEL_THRESHOLD_KG,
+                    "EOL | %s | Fuel=%.2f kg ≤ threshold (%.1f kg)",
+                    sat_id, remaining_fuel, EOL_FUEL_THRESHOLD_KG,
                 )
 
-        # ── Step 7: Advance simulation clock ───────────────────────────────────
+        # ── Step 7: Advance simulation clock ──
         self.sim_time = target_time
         logger.info(
             "SIMULATE | %s → %s | CDMs: %d | Collisions: %d | Maneuvers: %d",
@@ -865,7 +935,7 @@ class SimulationEngine:
         if self.satellites:
             sat_ids = list(self.satellites.keys())
             sat_positions = np.array([sat.position for sat in self.satellites.values()])
-            sat_lla = _eci_to_lla_batch(sat_positions)
+            sat_lla = _eci_to_lla_batch(sat_positions, self.sim_time)
             
             for i, sid in enumerate(sat_ids):
                 sat = self.satellites[sid]
@@ -886,7 +956,7 @@ class SimulationEngine:
         if self.debris:
             debris_ids = list(self.debris.keys())
             debris_pos = np.array([deb.position for deb in self.debris.values()])
-            debris_lla = _eci_to_lla_batch(debris_pos)
+            debris_lla = _eci_to_lla_batch(debris_pos, self.sim_time)
             # Vectorized rounding for 10K+ debris performance
             lats = np.round(debris_lla[:, 0], 2)
             lons = np.round(debris_lla[:, 1], 2)
