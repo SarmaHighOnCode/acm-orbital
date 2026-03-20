@@ -165,37 +165,32 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[
 # ── Lifespan ─────────────────────────────────────────────────────────────
 
 def _reinject_threats(eng: SimulationEngine) -> None:
-    """Re-inject co-orbital YELLOW-band threats near current satellite positions.
+    """Re-position co-orbital YELLOW-band threats near current satellite positions.
 
-    Called periodically to ensure the bullseye plot always has CDMs to display,
-    even after earlier threats have drifted out of range.
+    Called every step to ensure the bullseye plot always has CDMs to display.
+    Directly updates debris positions (no full ingest/assessment — cheap O(S)).
+    The next step()'s 4-stage assessment will pick them up.
     """
     rng = np.random.default_rng()
-    ts = eng.sim_time.isoformat()
     sats = list(eng.satellites.values())
     targets = sats[:min(20, len(sats))]
-    objects = []
+    count = 0
 
     for sat in targets:
         r_sat = sat.position
         v_sat = sat.velocity
         for j in range(2):
+            deb_id = f"THREAT-{sat.id}-{j:02d}"
             offset_dir = rng.normal(0, 1, 3)
             offset_dir /= np.linalg.norm(offset_dir)
             offset_km = rng.uniform(1.0, 3.0)
-            r_deb = r_sat + offset_dir * offset_km
-            # Exact co-orbital velocity — minimal perturbation to stay in YELLOW band
-            v_deb = v_sat.copy() + rng.normal(0, 0.000005, 3)
 
-            objects.append({
-                "id": f"THREAT-{sat.id}-{j:02d}",
-                "type": "DEBRIS",
-                "r": {"x": float(r_deb[0]), "y": float(r_deb[1]), "z": float(r_deb[2])},
-                "v": {"x": float(v_deb[0]), "y": float(v_deb[1]), "z": float(v_deb[2])},
-            })
+            if deb_id in eng.debris:
+                eng.debris[deb_id].position = r_sat + offset_dir * offset_km
+                eng.debris[deb_id].velocity = v_sat.copy()
+                count += 1
 
-    eng.ingest_telemetry(ts, objects)
-    logger.info("AUTO_STEP | Re-injected %d threat debris", len(objects))
+    logger.debug("AUTO_STEP | Repositioned %d threat debris", count)
 
 
 async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
@@ -214,9 +209,10 @@ async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
             async with lock:
                 await loop.run_in_executor(None, eng.step, step_size)
                 step_count += 1
-                # Re-inject threats every ~10 steps (~20s) to keep CDMs alive
-                if step_count % 10 == 0:
-                    await loop.run_in_executor(None, _reinject_threats, eng)
+                # Re-inject threats every step so CDMs persist across the
+                # J2-perturbed propagation (co-orbital debris diverges within
+                # a single 100s step due to differential RAAN precession)
+                await loop.run_in_executor(None, _reinject_threats, eng)
         except asyncio.CancelledError:
             break
         except Exception as exc:
