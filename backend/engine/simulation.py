@@ -210,18 +210,23 @@ class SimulationEngine:
         # ── INTER-TICK ASSESSMENT (Safety Fix) ───────────────────────────────
         # Run assessment immediately so that critical risks are detected and
         # evasive maneuvers can be scheduled BEFORE the first simulation step.
-        # This is critical for high-speed retrograde debris closing in <60s.
+        # Adaptive lookahead: scale down for large debris clouds to maintain
+        # real-time performance.  The full 24h window is restored in step().
         sat_states = {s.id: s.state_vector for s in self.satellites.values()}
+        _n_deb = len(self.debris)
+        _ingest_lookahead = 86400.0 if _n_deb <= 2000 else (
+            14400.0 if _n_deb <= 5000 else 3600.0
+        )
         self.active_cdms = self.assessor.assess(
             sat_states,
             {d.id: d.state_vector for d in self.debris.values()},
-            lookahead_s=86400.0,
+            lookahead_s=_ingest_lookahead,
             current_time=self.sim_time,
         )
         # Add Sat-vs-Sat pass
         self.active_cdms.extend(self.assessor.assess_sat_vs_sat(
             sat_states,
-            lookahead_s=86400.0,
+            lookahead_s=_ingest_lookahead,
             current_time=self.sim_time,
         ))
         self._auto_plan_maneuvers(self.sim_time)
@@ -559,15 +564,20 @@ class SimulationEngine:
 
         # ── Step 3a: 24-hour CDM scan (uses final post-burn states) ──
         sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
+        # Adaptive lookahead: scale down for very large debris clouds
+        _step_n_deb = len(self.debris)
+        _step_lookahead = 86400.0 if _step_n_deb <= 2000 else (
+            14400.0 if _step_n_deb <= 5000 else 3600.0
+        )
         self.active_cdms = self.assessor.assess(
             sat_states_snapshot,
             {d.id: d.state_vector for d in self.debris.values()},
-            lookahead_s=86400.0,
+            lookahead_s=_step_lookahead,
             current_time=target_time,
         )
         self.active_cdms.extend(self.assessor.assess_sat_vs_sat(
             sat_states_snapshot,
-            lookahead_s=86400.0,
+            lookahead_s=_step_lookahead,
             current_time=target_time,
         ))
 

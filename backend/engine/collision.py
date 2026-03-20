@@ -170,6 +170,24 @@ class ConjunctionAssessor:
         _t2 = _time.time()
         logger.debug("CA Stage 2 (KDTree + Pair Filter): %.2fs, %d candidate pairs from %d unique debris", _t2 - _t1, len(candidate_pairs), len(deb_targets))
 
+        # ── Performance guard: cap Stage-3 dense propagation load ─────────
+        # Dense DOP853 over 24h is O(6D) state variables; beyond ~1000 debris
+        # the single batch call dominates wall-clock. Prioritise debris that
+        # appear in the most candidate pairs (highest threat multiplicity).
+        _MAX_DENSE_DEBRIS = 1000
+        if len(deb_targets) > _MAX_DENSE_DEBRIS:
+            # Rank by pair count (most-connected debris first)
+            deb_pair_count: dict[str, int] = {}
+            for _, did in candidate_pairs:
+                deb_pair_count[did] = deb_pair_count.get(did, 0) + 1
+            ranked = sorted(deb_pair_count.keys(),
+                            key=lambda d: deb_pair_count[d], reverse=True)
+            keep = set(ranked[:_MAX_DENSE_DEBRIS])
+            deb_targets = {d: deb_targets[d] for d in keep}
+            candidate_pairs = [(s, d) for s, d in candidate_pairs if d in keep]
+            logger.info("CA Stage 2.1 | Capped debris to %d (from %d) for dense prop",
+                        len(deb_targets), len(deb_pair_count))
+
         # ── Standard path: Dense propagation for TCA refinement ────────────
         # Batch-propagate every satellite with dense output
         sat_ids_list, sat_batch_sol = self._screening_propagator.propagate_dense_batch(
