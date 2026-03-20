@@ -48,6 +48,7 @@ const useStore = create((set, get) => ({
         newHistory[sat.id].push({
           lat: sat.lat,
           lon: sat.lon,
+          alt: sat.alt_km || 400,
           t: snapshot.timestamp,
         });
         // Keep only last HISTORY_MAX_ENTRIES

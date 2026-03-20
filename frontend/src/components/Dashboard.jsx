@@ -9,7 +9,7 @@
  */
 
 import React from 'react';
-import GroundTrack from './GroundTrack';
+import GlobeView from './GlobeView';
 import BullseyePlot from './BullseyePlot';
 import FuelHeatmap from './FuelHeatmap';
 import ManeuverTimeline from './ManeuverTimeline';
@@ -49,9 +49,9 @@ export default function Dashboard() {
 
       {/* Main Grid — 3 cols x 2 rows */}
       <main className="flex-1 grid grid-cols-3 grid-rows-2 gap-1 p-1 min-h-0">
-        {/* Ground Track Map — large panel (span 2 cols) */}
+        {/* 3D Globe View — large panel (span 2 cols) */}
         <div className="col-span-2 row-span-1 rounded-lg overflow-hidden border border-space-700 bg-space-800">
-          <GroundTrack />
+          <GlobeView />
         </div>
 
         {/* Fuel Heatmap */}
