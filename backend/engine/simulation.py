@@ -358,10 +358,15 @@ class SimulationEngine:
             }
 
         # ── Pre-calculation: Determine sub-sampling needs ──
-        # Sub-step count: for large steps (e.g. 86400 s), use higher resolution
-        # to avoid missing high-velocity flybys. One sample every ~10 min.
-        _sub_interval = 600.0
-        _n_sub = max(1, min(int(step_seconds / _sub_interval), 144))
+        # Adaptive sub-interval: use finer resolution for shorter steps,
+        # coarser for very long steps (24h soak) to maintain performance.
+        if step_seconds <= 3600:
+            _sub_interval = 300.0    # 5-min samples for steps <= 1h
+        elif step_seconds <= 21600:
+            _sub_interval = 600.0    # 10-min samples for steps <= 6h
+        else:
+            _sub_interval = 1800.0   # 30-min samples for steps > 6h (24h soak)
+        _n_sub = max(1, min(int(step_seconds / _sub_interval), 72))
         
         # ── Step 1: Propagate all objects ──
         # Satellites: actual states
@@ -680,7 +685,7 @@ class SimulationEngine:
         """
         critical_groups: dict[str, list[CDM]] = {}
         for cdm in self.active_cdms:
-            if cdm.risk in ["CRITICAL", "RED"]:
+            if cdm.risk == "CRITICAL":
                 critical_groups.setdefault(cdm.satellite_id, []).append(cdm)
                 # If it's a Sat-vs-Sat conjunction, the "debris" side also needs to evaluate it
                 if cdm.debris_id in self.satellites:
