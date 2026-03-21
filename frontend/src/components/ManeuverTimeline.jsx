@@ -58,6 +58,7 @@ export default function ManeuverTimeline() {
   const canvasRef = useRef(null);
   const { maneuverLog, cdms, maneuverQueueDepth, timestamp, satellites, selectedSatellite } =
     useStore();
+  const satHistory = useStore((s) => s.satHistory);
 
   const simDate = timestamp ? new Date(timestamp) : null;
 
@@ -68,7 +69,7 @@ export default function ManeuverTimeline() {
     return Array.from(ids).sort();
   }, [satellites]);
 
-  // Pre-compute blackout status for each satellite
+  // Pre-compute blackout status for each satellite (current instant)
   const blackoutStatus = useMemo(() => {
     const status = {};
     for (const sat of satellites) {
@@ -76,6 +77,39 @@ export default function ManeuverTimeline() {
     }
     return status;
   }, [satellites]);
+
+  // Compute blackout windows per satellite from position history
+  // Returns { [satId]: [{startMs, endMs}, ...] }
+  const blackoutWindows = useMemo(() => {
+    const windows = {};
+    for (const satId of Object.keys(satHistory)) {
+      const history = satHistory[satId];
+      if (!history || history.length < 2) continue;
+      const spans = [];
+      let spanStart = null;
+
+      for (let i = 0; i < history.length; i++) {
+        const pt = history[i];
+        const blacked = !hasGroundContact(pt.lat, pt.lon, pt.alt || 400);
+        const ptMs = new Date(pt.t).getTime();
+
+        if (blacked && spanStart === null) {
+          spanStart = ptMs;
+        } else if (!blacked && spanStart !== null) {
+          spans.push({ startMs: spanStart, endMs: ptMs });
+          spanStart = null;
+        }
+      }
+      // If still in blackout at end of history, extend to current time + buffer
+      if (spanStart !== null) {
+        const lastMs = new Date(history[history.length - 1].t).getTime();
+        // Extend blackout 200s past last known point (conservative estimate)
+        spans.push({ startMs: spanStart, endMs: lastMs + 200_000 });
+      }
+      if (spans.length > 0) windows[satId] = spans;
+    }
+    return windows;
+  }, [satHistory]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -139,23 +173,47 @@ export default function ManeuverTimeline() {
         ctx.fillRect(0, y, W, ROW_HEIGHT);
       }
 
-      // ── Blackout zone indicator (orange hatched stripe at current time) ──
-      if (blackoutStatus[satIds[i]]) {
-        const nowX = timeToX(centerMs);
-        const blackoutW = Math.max(20, (180 / (windowMs / 1000)) * (W - LABEL_W));
-        const bx = nowX - blackoutW / 2;
+      // ── Blackout zone bands (from position history) ──
+      const satWindows = blackoutWindows[satIds[i]] || [];
+      for (const bw of satWindows) {
+        if (bw.endMs < startMs || bw.startMs > endMs) continue;
+        const bx1 = Math.max(LABEL_W, timeToX(bw.startMs));
+        const bx2 = Math.min(W, timeToX(bw.endMs));
+        const bw2 = bx2 - bx1;
+        if (bw2 <= 0) continue;
 
         ctx.fillStyle = 'rgba(255, 149, 0, 0.12)';
-        ctx.fillRect(Math.max(LABEL_W, bx), y, blackoutW, ROW_HEIGHT);
+        ctx.fillRect(bx1, y, bw2, ROW_HEIGHT);
 
-        // Hatching for blackout zone
+        // Diagonal hatching
         ctx.save();
         ctx.beginPath();
-        ctx.rect(Math.max(LABEL_W, bx), y, blackoutW, ROW_HEIGHT);
+        ctx.rect(bx1, y, bw2, ROW_HEIGHT);
         ctx.clip();
         ctx.strokeStyle = 'rgba(255, 149, 0, 0.25)';
         ctx.lineWidth = 0.5;
-        for (let hx = Math.max(LABEL_W, bx) - ROW_HEIGHT; hx < bx + blackoutW; hx += 5) {
+        for (let hx = bx1 - ROW_HEIGHT; hx < bx1 + bw2; hx += 5) {
+          ctx.beginPath();
+          ctx.moveTo(hx, y + ROW_HEIGHT);
+          ctx.lineTo(hx + ROW_HEIGHT, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      // Fallback: if no history but currently blacked out, show narrow band at now
+      if (satWindows.length === 0 && blackoutStatus[satIds[i]]) {
+        const nowX = timeToX(centerMs);
+        const fallbackW = Math.max(20, (180 / (windowMs / 1000)) * (W - LABEL_W));
+        const fbx = nowX - fallbackW / 2;
+        ctx.fillStyle = 'rgba(255, 149, 0, 0.12)';
+        ctx.fillRect(Math.max(LABEL_W, fbx), y, fallbackW, ROW_HEIGHT);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(Math.max(LABEL_W, fbx), y, fallbackW, ROW_HEIGHT);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 149, 0, 0.25)';
+        ctx.lineWidth = 0.5;
+        for (let hx = Math.max(LABEL_W, fbx) - ROW_HEIGHT; hx < fbx + fallbackW; hx += 5) {
           ctx.beginPath();
           ctx.moveTo(hx, y + ROW_HEIGHT);
           ctx.lineTo(hx + ROW_HEIGHT, y);
@@ -214,11 +272,31 @@ export default function ManeuverTimeline() {
             ctx.fillText(`${entry.delta_v_magnitude_ms.toFixed(1)}`, x + 1, y + 9);
           }
 
-          // Flag if burn overlaps with blackout zone
-          if (blackoutStatus[satId]) {
+          // Flag if burn overlaps with any blackout window
+          const burnEndMs = burnMs + 5000; // ~5s burn duration
+          const burnOverlapsBlackout = (blackoutWindows[satId] || []).some(
+            (bw) => burnMs < bw.endMs && burnEndMs > bw.startMs
+          ) || (!(blackoutWindows[satId]?.length) && blackoutStatus[satId]);
+
+          if (burnOverlapsBlackout) {
+            // Orange border + warning triangle
             ctx.strokeStyle = '#ff9500';
             ctx.lineWidth = 1.5;
             ctx.strokeRect(x - 1, y - 1, burnW + 2, ROW_HEIGHT - 2);
+            // Warning triangle ⚠
+            const tx = x + burnW + 3;
+            const ty = y + (ROW_HEIGHT - 4) / 2;
+            ctx.fillStyle = '#ff9500';
+            ctx.beginPath();
+            ctx.moveTo(tx, ty - 4);
+            ctx.lineTo(tx - 3, ty + 3);
+            ctx.lineTo(tx + 3, ty + 3);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = '#0d1117';
+            ctx.font = '5px Inter, monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('!', tx, ty + 2);
           }
         }
 
@@ -250,6 +328,21 @@ export default function ManeuverTimeline() {
             ctx.stroke();
           }
           ctx.restore();
+
+          // Flag cooldown-blackout overlap (dashed orange border)
+          const coolOverlapsBlackout = (blackoutWindows[satId] || []).some(
+            (bw) => coolStartMs < bw.endMs && coolEndMs > bw.startMs
+          ) || (!(blackoutWindows[satId]?.length) && blackoutStatus[satId]);
+
+          if (coolOverlapsBlackout && coolW > 0) {
+            ctx.save();
+            ctx.strokeStyle = '#ff9500';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 2]);
+            ctx.strokeRect(clampedX1, y, clampedW, ROW_HEIGHT - 4);
+            ctx.setLineDash([]);
+            ctx.restore();
+          }
 
           // Cooldown violation detection
           if (i < burns.length - 1) {
@@ -318,11 +411,21 @@ export default function ManeuverTimeline() {
       { color: 'rgba(75, 85, 99, 0.7)', label: 'Cooldown' },
       { color: '#ff3355', label: 'CDM' },
       { color: '#ff9500', label: 'Blackout' },
+      { color: '#ff9500', label: '\u26a0 Overlap', border: true },
     ];
     let lx = 4;
     for (const item of items) {
-      ctx.fillStyle = item.color;
-      ctx.fillRect(lx, legendY - 5, 8, 6);
+      if (item.border) {
+        // Draw bordered swatch for "overlap" legend
+        ctx.fillStyle = '#06b6d4';
+        ctx.fillRect(lx, legendY - 5, 8, 6);
+        ctx.strokeStyle = item.color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(lx, legendY - 5, 8, 6);
+      } else {
+        ctx.fillStyle = item.color;
+        ctx.fillRect(lx, legendY - 5, 8, 6);
+      }
       ctx.fillStyle = '#6b7280';
       ctx.fillText(item.label, lx + 10, legendY);
       lx += ctx.measureText(item.label).width + 20;
@@ -334,7 +437,7 @@ export default function ManeuverTimeline() {
       ctx.textAlign = 'right';
       ctx.fillText(`${maneuverQueueDepth} burn(s) queued`, W - 4, legendY);
     }
-  }, [maneuverLog, cdms, maneuverQueueDepth, simDate, satIds, selectedSatellite, blackoutStatus]);
+  }, [maneuverLog, cdms, maneuverQueueDepth, simDate, satIds, selectedSatellite, blackoutStatus, blackoutWindows]);
 
   useEffect(() => { draw(); }, [draw]);
 
