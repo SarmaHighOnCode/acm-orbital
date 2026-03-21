@@ -93,10 +93,15 @@ class GroundStationNetwork:
         # 3. Compute range vector and its elevation
         range_vector = sat_eci - gs_eci
         range_norm = np.linalg.norm(range_vector)
-        
+        if range_norm < 1e-10:
+            return 90.0  # Satellite directly at station — zenith
+
         # Local vertical is approximately the unit vector of gs_eci
-        local_vertical = gs_eci / np.linalg.norm(gs_eci)
-        
+        gs_norm = np.linalg.norm(gs_eci)
+        if gs_norm < 1e-10:
+            return 0.0
+        local_vertical = gs_eci / gs_norm
+
         # sin(el) = (range . vertical) / |range|
         sin_el = np.dot(range_vector, local_vertical) / range_norm
         elevation_deg = np.degrees(np.arcsin(np.clip(sin_el, -1.0, 1.0)))

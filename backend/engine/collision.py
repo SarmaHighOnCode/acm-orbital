@@ -256,7 +256,7 @@ class ConjunctionAssessor:
 
                 res = minimize_scalar(dist_fn, bounds=(t_lo, t_hi), method="bounded")
                 
-                if res.fun < 5.0:
+                if np.isfinite(res.fun) and res.fun < 5.0:
                     tca_s = float(res.x)
                     risk = self._classify_risk(res.fun)
                     
@@ -370,7 +370,7 @@ class ConjunctionAssessor:
                 t_end = min(t_start + _window_size, lookahead_s)
                 res = minimize_scalar(dist_fn, bounds=(t_start, t_end), method="bounded")
                 
-                if res.fun < 5.0:
+                if np.isfinite(res.fun) and res.fun < 5.0:
                     tca_s = float(res.x)
                     risk = self._classify_risk(res.fun)
                     s1_tca = batch_sol(tca_s)[id_to_idx[s1_id]]

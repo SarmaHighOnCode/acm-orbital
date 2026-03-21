@@ -122,7 +122,9 @@ class OrbitalPropagator:
         for _ in range(n_sub):
             # Acceleration at current position (two-body + J2)
             r_vec = np.linalg.norm(cur_pos, axis=1, keepdims=True)
+            r_vec = np.maximum(r_vec, 1e-10)  # Guard against r=0
             r_s = r_vec.squeeze()
+            r_s = np.maximum(r_s, 1e-10)
             a_grav = -MU_EARTH * cur_pos / (r_vec ** 3)
             f = 1.5 * J2 * MU_EARTH * R_EARTH ** 2 / (r_s ** 5)
             z_r2 = (cur_pos[:, 2] / r_s) ** 2
@@ -137,7 +139,9 @@ class OrbitalPropagator:
 
             # Acceleration at new position
             r_vec2 = np.linalg.norm(new_pos, axis=1, keepdims=True)
+            r_vec2 = np.maximum(r_vec2, 1e-10)  # Guard against r=0
             r_s2 = r_vec2.squeeze()
+            r_s2 = np.maximum(r_s2, 1e-10)
             a_grav2 = -MU_EARTH * new_pos / (r_vec2 ** 3)
             f2 = 1.5 * J2 * MU_EARTH * R_EARTH ** 2 / (r_s2 ** 5)
             z_r2_2 = (new_pos[:, 2] / r_s2) ** 2
@@ -242,6 +246,7 @@ class OrbitalPropagator:
         # |r| and its reciprocal for all N objects — shape (N,)
         # Cache r_inv: reused for gravity (r⁻³), J2 factor (r⁻⁵), and z²/r².
         r: np.ndarray     = np.linalg.norm(pos, axis=1)
+        r = np.maximum(r, 1e-10)  # Guard against r=0 division
         r_inv: np.ndarray = 1.0 / r
 
         # Two-body gravity: a⃗ = -(μ/|r⃗|³)·r⃗   [Problem Statement §3.2]
@@ -301,7 +306,10 @@ class OrbitalPropagator:
             atol=self.atol,
             dense_output=False,
         )
-        return sol.y[:, -1]
+        result = sol.y[:, -1]
+        if not np.all(np.isfinite(result)):
+            return state_vector.copy()  # Return unchanged on solver failure
+        return result
 
     def propagate_dense(
         self, state_vector: np.ndarray, dt_seconds: float
@@ -368,6 +376,11 @@ class OrbitalPropagator:
 
         # Unpack 6N result → (N, 6) then zip into dict — no Python loop
         res_array: np.ndarray = sol.y[:, -1].reshape(n_objects, 6)
+        # Guard: replace any NaN/Inf results with original state
+        originals = np.array(list(states.values()))
+        bad_mask = ~np.all(np.isfinite(res_array), axis=1)
+        if np.any(bad_mask):
+            res_array[bad_mask] = originals[bad_mask]
         return dict(zip(object_ids, res_array))
 
     def propagate_dense_batch(
