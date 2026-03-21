@@ -228,6 +228,38 @@ export default function BullseyePlot() {
         );
       }
 
+      // ── Risk Distribution Bar (top-right) ──
+      if (relevantCdms.length > 0) {
+        const rc = { CRITICAL: 0, RED: 0, YELLOW: 0, GREEN: 0 };
+        for (const c of relevantCdms) rc[c.risk] = (rc[c.risk] || 0) + 1;
+        const total = relevantCdms.length;
+        const barW = 80;
+        const barH = 6;
+        const barX = w - barW - 8;
+        const barY = 8;
+
+        // Background label
+        ctx.fillStyle = 'rgba(10,14,26,0.85)';
+        ctx.fillRect(barX - 4, barY - 2, barW + 8, barH + 16);
+        ctx.font = '7px Inter, monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#6b7280';
+        ctx.fillText(`${total} threats`, barX, barY + barH + 11);
+
+        let offset = 0;
+        for (const [risk, color] of [['CRITICAL', '#ff3355'], ['RED', '#ff6644'], ['YELLOW', '#ffaa00'], ['GREEN', '#00ff88']]) {
+          if (!rc[risk]) continue;
+          const segW = (rc[risk] / total) * barW;
+          ctx.fillStyle = color;
+          ctx.fillRect(barX + offset, barY, segW, barH);
+          offset += segW;
+        }
+        // Border
+        ctx.strokeStyle = '#37415166';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(barX, barY, barW, barH);
+      }
+
       // Continue animation if critical CDMs
       if (relevantCdms.some((c) => c.risk === 'CRITICAL')) {
         animRef.current = requestAnimationFrame(draw);
@@ -254,9 +286,16 @@ export default function BullseyePlot() {
 
   return (
     <div className="w-full h-full flex flex-col">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
-        Conjunction Bullseye
-      </h3>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          Conjunction Bullseye
+        </h3>
+        {relevantCdms.length > 0 && (
+          <span className="text-[9px] font-mono text-gray-500">
+            {relevantCdms.length} active CDMs
+          </span>
+        )}
+      </div>
       <div className="flex-1 min-h-0">
         <canvas
           ref={canvasRef}
