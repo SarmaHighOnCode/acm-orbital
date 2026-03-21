@@ -4,21 +4,85 @@
  *
  * 6-panel dashboard grid with header status bar.
  * Layout: 3 columns x 2 rows
- *   Row 1: [Ground Track (2 cols)]  [Fuel Heatmap]
+ *   Row 1: [Orbital View (2 cols)]  [Fuel Heatmap]
  *   Row 2: [Maneuver Timeline]      [Bullseye]      [Delta-V Chart]
+ *
+ * Toggle button switches between 3D Globe (Three.js) and 2D Ground Track (Canvas).
  */
 
-import React from 'react';
+import React, { useState, Suspense } from 'react';
 import GlobeView from './GlobeView';
+import GroundTrack from './GroundTrack';
 import BullseyePlot from './BullseyePlot';
 import FuelHeatmap from './FuelHeatmap';
 import ManeuverTimeline from './ManeuverTimeline';
 import DeltaVChart from './DeltaVChart';
 import useStore from '../store';
 
+function ViewToggle({ view, setView }) {
+  return (
+    <div style={{
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      zIndex: 20,
+      display: 'flex',
+      gap: 0,
+      borderRadius: 6,
+      overflow: 'hidden',
+      border: '1px solid rgba(100, 140, 180, 0.3)',
+      background: 'rgba(5, 10, 20, 0.85)',
+      backdropFilter: 'blur(6px)',
+    }}>
+      {[
+        { key: '3d', label: '3D Globe' },
+        { key: '2d', label: '2D Track' },
+      ].map(({ key, label }) => (
+        <button
+          key={key}
+          onClick={() => setView(key)}
+          style={{
+            padding: '4px 12px',
+            fontSize: 10,
+            fontFamily: 'JetBrains Mono, monospace',
+            fontWeight: view === key ? 600 : 400,
+            color: view === key ? '#00ff88' : '#6b7280',
+            background: view === key ? 'rgba(0, 255, 136, 0.08)' : 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            letterSpacing: '0.5px',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GlobeFallback() {
+  return (
+    <div style={{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#020810',
+      color: '#4a5568',
+      fontFamily: 'JetBrains Mono, monospace',
+      fontSize: 12,
+    }}>
+      Loading 3D Globe...
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, error, connected } =
     useStore();
+  const [view, setView] = useState('3d');
 
   return (
     <div className="w-full h-full flex flex-col bg-space-900">
@@ -49,9 +113,17 @@ export default function Dashboard() {
 
       {/* Main Grid — 3 cols x 2 rows */}
       <main className="flex-1 grid grid-cols-3 grid-rows-2 gap-1 p-1 min-h-0">
-        {/* 3D Globe View — large panel (span 2 cols) */}
-        <div className="col-span-2 row-span-1 rounded-lg overflow-hidden border border-space-700 bg-space-800">
-          <GlobeView />
+        {/* Orbital View — large panel (span 2 cols) with 3D/2D toggle */}
+        <div className="col-span-2 row-span-1 rounded-lg overflow-hidden border border-space-700 bg-space-800"
+             style={{ position: 'relative' }}>
+          <ViewToggle view={view} setView={setView} />
+          {view === '3d' ? (
+            <Suspense fallback={<GlobeFallback />}>
+              <GlobeView />
+            </Suspense>
+          ) : (
+            <GroundTrack />
+          )}
         </div>
 
         {/* Fuel Heatmap */}
