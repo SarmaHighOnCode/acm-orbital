@@ -82,7 +82,7 @@ function GlobeFallback() {
 export default function Dashboard() {
   const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, error, connected } =
     useStore();
-  const [view, setView] = useState('3d');
+  const [view, setView] = useState('2d');
 
   return (
     <div className="w-full h-full flex flex-col bg-space-900">
