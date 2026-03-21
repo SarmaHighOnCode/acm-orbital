@@ -21,6 +21,7 @@ Thumbs.db
 .env.local
 live_telemetry.json
 frontend/dist
+backend/static
 .claude
 .planning
 .agents

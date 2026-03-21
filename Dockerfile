@@ -32,6 +32,7 @@ RUN cd /app/frontend && npm ci --production=false
 
 COPY frontend/ /app/frontend/
 RUN cd /app/frontend && npm run build \
+    && rm -rf /app/backend/static \
     && mkdir -p /app/backend/static \
     && cp -r dist/* /app/backend/static/
 

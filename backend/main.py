@@ -252,6 +252,25 @@ app = FastAPI(
 )
 
 # ── Middleware ───────────────────────────────────────────────────────────
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+
+class NoCacheHTMLMiddleware(BaseHTTPMiddleware):
+    """Prevent browsers from caching index.html so they always get the latest build."""
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        ct = response.headers.get("content-type", "")
+        if "text/html" in ct:
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+
+app.add_middleware(NoCacheHTMLMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
