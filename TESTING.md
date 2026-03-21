@@ -1,6 +1,6 @@
 # Testing Report — ACM-Orbital
 
-**252 test methods | 19 test files | 7,400+ lines of test code | 0 failures**
+**258 test methods | 21 test files | 7,800+ lines of test code | 246 passing | 0 failures**
 
 This document tracks every test suite, the bugs they caught, and the fixes applied — from Day 1 scaffold to the final hardened engine.
 
@@ -10,7 +10,7 @@ This document tracks every test suite, the bugs they caught, and the fixes appli
 
 ```
 backend$ python -m pytest tests/ -q
-160 passed, 2 xfailed in 174s
+246 passed, 3 xfailed, 1 skipped, 8 deselected in 198s
 ```
 
 | Suite | Tests | Result | Purpose |
