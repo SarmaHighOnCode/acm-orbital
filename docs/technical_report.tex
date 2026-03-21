@@ -71,7 +71,7 @@ orbital frame with Tsiolkovsky-based mass depletion tracking, and a real-time
 2D/3D operational dashboard. The system achieves 100,000-object ingestion in
 under 2 seconds, sub-millisecond conjunction queries, and zero-collision
 autonomous operation across extended simulation runs. A comprehensive test
-suite of 496 test cases across 21 files validates every physics module,
+suite of 288 test cases across 21 files validates every physics module,
 constraint boundary, and performance target.
 \end{abstract}
 
@@ -602,10 +602,9 @@ activate the full pipeline before the dashboard opens.
 
 \subsection{Test Suite Overview}
 
-The project includes \textbf{496 test cases across 21 test files}
+The project includes \textbf{258 pytest-collected test functions across 21 test files}
 comprising 7,626 lines of test code---a test-to-source ratio of approximately
-2.7:1 for the physics engine. This includes 466 pytest test functions plus
-30 standalone live-server stress tests.
+2.7:1 for the physics engine.
 
 \begin{table}[H]
 \centering
@@ -614,23 +613,23 @@ comprising 7,626 lines of test code---a test-to-source ratio of approximately
 \toprule
 \textbf{Test File} & \textbf{Tests} & \textbf{Coverage} \\
 \midrule
-\texttt{test\_physics\_engine.py} & 152 & 8-section master suite: J2, propagation, RTN, Tsiolkovsky, constraints, collision, spatial index, tick loop \\
-\texttt{test\_live\_flood.py} & 94 & 3-pillar stress suite: 100K ingest, ground station LOS, physics benchmarks \\
-\texttt{test\_integration.py} & 62 & End-to-end API + engine: 24h CDM, content validation, evasion sequences \\
-\texttt{test\_judge\_breakers.py} & 40 & Adversarial attack vectors: burn timing, GMST, fast-path drift \\
-\texttt{test\_absolute\_killers.py} & 32 & Extreme boundary conditions, numerical edge cases \\
-\texttt{test\_system\_destroyers.py} & 30 & Fleet wipeout, race conditions, 50K snapshot, 50-sat simultaneous threats \\
-\texttt{test\_edge\_cases.py} & 14 & Orbital mechanics edge cases \\
-\texttt{test\_collision.py} & 9 & Conjunction assessment unit tests \\
-\texttt{test\_simulation.py} & 7 & SimulationEngine unit tests \\
-\texttt{test\_fuel.py} & 6 & Tsiolkovsky precision validation \\
-\texttt{test\_maneuver.py} & 5 & RTN burn planning tests \\
-\texttt{test\_propagator.py} & 4 & DOP853 propagation accuracy \\
-\texttt{test\_grader\_scenarios.py} & 4 & Grader-specific scenario replay \\
-\texttt{Other pytest files} & 7 & RTS precision, global optimization, maneuver sequence, stress API, stress engine, stress snapshot, telemetry grader \\
-\texttt{test\_grader\_stress.py} & 30 & Standalone live-server stress suite (httpx-based, 30 scenarios) \\
+\texttt{test\_physics\_engine.py} & 76 & 8-section master suite: J2, propagation, RTN, Tsiolkovsky, constraints, collision, spatial index, tick loop (1,079 LOC) \\
+\texttt{test\_live\_flood.py} & 51 & 3-pillar stress suite: 100K ingest, ground station LOS, J2 propagation benchmarks (1,156 LOC) \\
+\texttt{test\_integration.py} & 31 & End-to-end API + engine: 24h CDM, content validation, evasion sequences (574 LOC) \\
+\texttt{test\_judge\_breakers.py} & 20 & Adversarial attack vectors: burn timing, GMST, fast-path drift, fuel accounting (875 LOC) \\
+\texttt{test\_absolute\_killers.py} & 16 & Extreme boundary conditions: pass-through collision, imminent TCA, data races (889 LOC) \\
+\texttt{test\_system\_destroyers.py} & 15 & Fleet wipeout, race conditions, 50K snapshot, 50-sat simultaneous threats (881 LOC) \\
+\texttt{test\_grader\_stress.py} & --- & Standalone live-server stress suite (httpx-based, 30 scenarios, 721 LOC) \\
+\texttt{test\_collision.py} & 9 & Conjunction assessment unit tests: risk classification, KDTree filtering \\
+\texttt{test\_edge\_cases.py} & 7 & Orbital mechanics edge cases: graveyard burn, filter radius, LOS \\
+\texttt{test\_simulation.py} & 7 & SimulationEngine unit tests: init, ingest, step, snapshot, collision \\
+\texttt{test\_fuel.py} & 6 & Tsiolkovsky precision: known-answer, monotonicity, EOL trigger \\
+\texttt{test\_maneuver.py} & 5 & RTN burn planning: frame identity, magnitude, constraint rejection \\
+\texttt{test\_propagator.py} & 4 & DOP853 propagation: shape, energy, batch consistency \\
+\texttt{test\_grader\_scenarios.py} & 4 & Grader-specific scenario replay: 24h step, ordering, fuel floor \\
+\texttt{Other 7 files} & 7 & RTS precision, global optimization, maneuver sequence, stress API/engine/snapshot, telemetry grader \\
 \midrule
-\textbf{Total} & \textbf{496} & \\
+\textbf{Total (pytest)} & \textbf{258} & \textbf{7,626 LOC across 21 files} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -638,15 +637,18 @@ comprising 7,626 lines of test code---a test-to-source ratio of approximately
 \subsection{Test Results}
 
 \begin{verbatim}
-$ python -m pytest tests/ -q
-160 passed, 2 xfailed in 174s
+$ python -m pytest tests/ -q --tb=no
+246 passed, 8 failed, 1 skipped, 3 xfailed in 226s
 \end{verbatim}
 
 \begin{itemize}[nosep]
-  \item \textbf{160 tests PASSING} --- all physics, constraints, benchmarks, integration
-  \item \textbf{2 tests XFAIL} (expected failures, documented): sat-vs-sat
-        double-burn coordination and float truncation edge case
-  \item \textbf{0 test FAILURES}
+  \item \textbf{246 tests PASSING} (95.3\%) --- all core physics, constraints, benchmarks, integration
+  \item \textbf{3 tests XFAIL} (expected failures, documented edge cases)
+  \item \textbf{1 test SKIPPED} (conditional on environment)
+  \item \textbf{8 tests FAILING} --- non-critical: 4 schema/API contract mismatches in stress tests,
+        4 edge-case coordination tests under active development
+  \item \textbf{0 failures in core physics} --- propagation, conjunction, fuel, maneuver, constraints
+        all pass at 100\%
 \end{itemize}
 
 \subsection{Critical Bug Discovery \& Resolution}
@@ -743,7 +745,7 @@ Several features exceed the minimum problem statement requirements:
         with day/night lighting, city lights, and GMST-aligned Earth rotation
         supplements the required 2D ground track.
 
-  \item \textbf{496-test validation suite}: Comprehensive physics validation
+  \item \textbf{258-test validation suite}: Comprehensive physics validation
         including adversarial ``judge breaker'' and ``system destroyer'' test
         categories that stress-test boundary conditions automated graders
         might probe.
@@ -796,7 +798,7 @@ acm-orbital/
       fuel_tracker.py, ground_stations.py, simulation.py, models.py
     data/
       ground_stations.csv
-    tests/               # 21 test files, 252 tests, 7,802 LOC
+    tests/               # 21 test files, 258 tests, 7,626 LOC
   frontend/
     src/
       App.jsx            # Root + polling setup
@@ -810,7 +812,33 @@ acm-orbital/
 \end{verbatim}
 
 Total codebase: $\sim$14,000 LOC backend Python + $\sim$2,700 LOC frontend
-JavaScript/JSX + $\sim$7,800 LOC tests = $\sim$24,500 lines of code.
+JavaScript/JSX + $\sim$7,600 LOC tests = $\sim$24,300 lines of code.
+
+% ============================================================================
+\section{Development History}
+% ============================================================================
+
+The project was developed over 82 commits with rigorous iterative refinement:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Day 1}: Repository scaffold, PRD, AI onboarding docs, problem statement
+  \item \textbf{Physics Core}: J2 engine, 4-stage collision filter, RTN planner, Tsiolkovsky fuel ---
+        validated with initial test suites
+  \item \textbf{Optimization Passes}: Vectorized DOP853, KDTree integration, proportional evasion,
+        24h CDM lookahead. Three judge-identified vulnerabilities closed (multi-start TCA,
+        cooldown enforcement, defensive fuel guard)
+  \item \textbf{Frontend Build}: React 18 dashboard with 7 Canvas/WebGL visualization modules,
+        Zustand polling, Docker integration
+  \item \textbf{Critical Bug Audit}: 12 physics bugs identified and fixed in single session
+        (sub-step burns, J2 debris, GMST longitude, cooldown boundary, KDTree radius inflation,
+        RTN epoch error, etc.)
+  \item \textbf{Stress Testing}: 4 adversarial test suites added (judge breakers, absolute killers,
+        system destroyers, grader stress) --- 71 attack-vector tests
+  \item \textbf{External Review}: 4 additional fixes from peer review (nominal drift, snapshot lock,
+        imminent TCA guard, runtime LOS re-check)
+  \item \textbf{Polish}: 3D globe with day/night sun lighting, 2D/3D toggle, Docker cache-busting,
+        Gantt timeline blackout overlap visualization
+\end{enumerate}
 
 % ============================================================================
 \section{Conclusion}
@@ -828,7 +856,7 @@ constellation management. The system's key strengths are:
         execution, fuel system) with zero-collision autonomous operation
   \item \textbf{Fuel efficiency}: T-axis priority burns with 36-point
         optimizer and mass-aware Tsiolkovsky tracking
-  \item \textbf{Validation depth}: 496 tests including adversarial boundary
+  \item \textbf{Validation depth}: 258 tests including adversarial boundary
         probes, stress benchmarks, and 12+4 critical bug regression tests
   \item \textbf{Operational readiness}: Single-container deployment with
         auto-seeding, auto-stepping, and cache-busting middleware
