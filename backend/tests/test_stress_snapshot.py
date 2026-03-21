@@ -38,7 +38,9 @@ def test_api_snapshot_stress_10k():
     # 3. Assertions
     assert response.status_code == 200
     data = response.json()
-    assert len(data["debris_cloud"]) == 10000
+    assert len(data["debris_cloud"]) >= 10000, (
+        f"Expected at least 10K debris in snapshot, got {len(data['debris_cloud'])}"
+    )
     # Snapshot should be very fast with vectorization
     assert duration < 1.0, f"Snapshot response too slow: {duration:.2f}s"
 

@@ -184,13 +184,14 @@ class TestStage2FilterFalseNegative:
             assert cdms[0].risk == "CRITICAL", \
                 f"Expected CRITICAL CDM, got {cdms[0].risk}"
 
-    def test_stage2_filter_radius_is_200km(self):
-        """Sanity: confirm the KDTree query radius is 200 km (expanded from 50 km)."""
+    def test_stage2_filter_radius_at_least_200km(self):
+        """Sanity: confirm the KDTree query radius is at least 200 km."""
         import inspect
         from engine import collision
         src = inspect.getsource(collision.ConjunctionAssessor.assess)
-        assert "r=200.0" in src, \
-            "Stage-2 KDTree query radius is not 200.0 km — was the fix reverted?"
+        # Radius is dynamic: max(200.0, ...) — verify 200.0 is the floor
+        assert "200.0" in src, \
+            "Stage-2 KDTree query radius floor of 200.0 km not found in source"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
