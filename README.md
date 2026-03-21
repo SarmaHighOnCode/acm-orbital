@@ -11,6 +11,8 @@
 [![Docker](https://img.shields.io/badge/Docker-ubuntu:22.04-2496ED?logo=docker&logoColor=white)](https://docker.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+📄 **[Technical Report (PDF)](docs/ACM_Technical_Report.pdf)** — 15-page LaTeX report covering architecture, algorithms, benchmarks, and 258-test validation suite.
+
 ---
 
 *A high-performance backend system acting as the centralized brain for 50+ satellites navigating 10,000+ debris objects. Real-time collision prediction, autonomous evasion maneuvers, fuel-optimal trajectory planning, and a 60FPS Canvas visualization dashboard — all in a single Docker container.*
