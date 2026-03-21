@@ -38,9 +38,24 @@ backend/static/
 Thumbs.db
 Desktop.ini
 
+# ── Internal tooling ─────────────────────────────────
+.claude/
+.agents/
+.planning/
+
 # ── Environment ──────────────────────────────────────
 .env
 .env.local
 
-# ── Generated data files ────────────────────────────
+# ── Generated data / debug files ────────────────────
 live_telemetry.json
+*.log
+repro_*.py
+repro_*.json
+debug_*.txt
+debug_*.json
+tmp_*.txt
+*_results.json
+verify_out.txt
+test_out.txt
+stress_result.txt
