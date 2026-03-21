@@ -13,6 +13,39 @@ const DEG2RAD = Math.PI / 180;
 const R_EARTH = 6.378;
 const R_EARTH_KM = 6378.137;
 
+/* ── Sun position from timestamp ─────────────────────────
+ *  Returns a unit vector pointing toward the Sun in the
+ *  same ECI-like frame the globe uses.
+ *  Uses a simplified solar position model (accurate to ~1°). */
+function sunDirection(timestamp) {
+  const d = timestamp ? new Date(timestamp) : new Date();
+  const dayOfYear = Math.floor(
+    (d - new Date(d.getUTCFullYear(), 0, 0)) / 86400000
+  );
+  // Solar declination (angle above/below equator)
+  const declRad = -23.44 * DEG2RAD * Math.cos((2 * Math.PI * (dayOfYear + 10)) / 365);
+  // Hour angle: where the Sun is in longitude (0° at solar noon UTC)
+  const utcHours = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+  const haRad = ((utcHours / 24) * 360 - 180) * DEG2RAD;
+  // Convert to cartesian (same frame as geoToCartesian with lon=0 at +X)
+  return new THREE.Vector3(
+    Math.cos(declRad) * Math.cos(haRad),
+    Math.sin(declRad),
+    Math.cos(declRad) * Math.sin(haRad)
+  );
+}
+
+/* ── GMST rotation for Earth ─────────────────────────────
+ *  Returns the Y-axis rotation angle so continents face the
+ *  correct direction for the given timestamp. */
+function gmstRotation(timestamp) {
+  const d = timestamp ? new Date(timestamp) : new Date();
+  const j2000 = new Date('2000-01-01T12:00:00Z');
+  const dtDays = (d - j2000) / 86400000;
+  const gmstDeg = (280.46061837 + 360.98564736629 * dtDays) % 360;
+  return gmstDeg * DEG2RAD;
+}
+
 const GROUND_STATIONS = [
   { id: 'GS-001', name: 'ISTRAC',       lat: 13.0333,  lon:  77.5167 },
   { id: 'GS-002', name: 'Svalbard',     lat: 78.2297,  lon:  15.4077 },
@@ -43,25 +76,27 @@ function geoToCartesian(lat, lon, altKm) {
 /* ── Earth ─────────────────────────────────────────────── */
 function Earth() {
   const meshRef = useRef();
+  const timestamp = useStore((s) => s.timestamp);
 
-  const texture = useMemo(() => {
+  /* Day-side texture (bright oceans + green land) */
+  const dayTexture = useMemo(() => {
     const W = 2048, H = 1024;
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    /* --- Ocean: rich bright blue ----------------------- */
+    /* Ocean gradient */
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0,    '#0a2248');
-    grad.addColorStop(0.15, '#1a4a8a');
-    grad.addColorStop(0.5,  '#1e5faa');
-    grad.addColorStop(0.85, '#1a4a8a');
-    grad.addColorStop(1,    '#0a2248');
+    grad.addColorStop(0,    '#0a2a60');
+    grad.addColorStop(0.15, '#1a5090');
+    grad.addColorStop(0.5,  '#2068b8');
+    grad.addColorStop(0.85, '#1a5090');
+    grad.addColorStop(1,    '#0a2a60');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    /* --- Lat/lon grid ---------------------------------- */
-    ctx.strokeStyle = 'rgba(80, 150, 230, 0.22)';
+    /* Lat/lon grid */
+    ctx.strokeStyle = 'rgba(80, 150, 230, 0.18)';
     ctx.lineWidth = 0.7;
     for (let lo = 0; lo <= 360; lo += 30) {
       const x = (lo / 360) * W;
@@ -71,17 +106,14 @@ function Earth() {
       const y = (la / 180) * H;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
-    /* Equator brighter */
-    ctx.strokeStyle = 'rgba(100, 190, 255, 0.45)';
+    /* Equator */
+    ctx.strokeStyle = 'rgba(100, 190, 255, 0.35)';
     ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
 
     const toC = (lo, la) => [((lo + 180) / 360) * W, ((90 - la) / 180) * H];
-
     const drawLand = (coords, fill, stroke) => {
-      ctx.fillStyle   = fill;
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth   = 1.6;
+      ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 1.6;
       ctx.beginPath();
       coords.forEach(([lo, la], i) => {
         const [x, y] = toC(lo, la);
@@ -90,9 +122,8 @@ function Earth() {
       ctx.closePath(); ctx.fill(); ctx.stroke();
     };
 
-    /* Bright, saturated land colours */
-    const F = 'rgba(45, 140, 65, 0.97)';
-    const S = 'rgba(90, 210, 110, 0.88)';
+    const F = 'rgba(45, 145, 65, 0.97)';
+    const S = 'rgba(90, 210, 110, 0.85)';
 
     /* North America */
     drawLand([[-168,71],[-140,70],[-100,74],[-82,70],[-65,47],[-55,47],[-60,44],
@@ -137,18 +168,113 @@ function Earth() {
     return tex;
   }, []);
 
-  /* slow self-rotation */
-  useFrame((_, delta) => {
-    if (meshRef.current) meshRef.current.rotation.y += delta * 0.01;
+  /* Night-side emissive texture (dim city lights + dark ocean) */
+  const nightTexture = useMemo(() => {
+    const W = 2048, H = 1024;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    /* Very dark base (night ocean) */
+    ctx.fillStyle = '#010408';
+    ctx.fillRect(0, 0, W, H);
+
+    /* Faint grid visible at night */
+    ctx.strokeStyle = 'rgba(20, 50, 90, 0.15)';
+    ctx.lineWidth = 0.5;
+    for (let lo = 0; lo <= 360; lo += 30) {
+      const x = (lo / 360) * W;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let la = 0; la <= 180; la += 30) {
+      const y = (la / 180) * H;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    /* City light clusters — bright dots in populated regions */
+    const toC = (lo, la) => [((lo + 180) / 360) * W, ((90 - la) / 180) * H];
+    const cities = [
+      /* Major city clusters: [lon, lat, intensity, spread] */
+      [-74, 40, 1.0, 12],   /* NYC */
+      [-87, 41, 0.8, 10],   /* Chicago */
+      [-118, 34, 0.9, 11],  /* LA */
+      [-43, -22, 0.7, 10],  /* Rio */
+      [-46, -23, 0.8, 10],  /* Sao Paulo */
+      [-3, 51, 0.9, 12],    /* London */
+      [2, 48, 0.8, 10],     /* Paris */
+      [13, 52, 0.6, 8],     /* Berlin */
+      [37, 55, 0.7, 9],     /* Moscow */
+      [31, 30, 0.6, 8],     /* Cairo */
+      [77, 28, 0.9, 13],    /* Delhi */
+      [72, 19, 0.8, 10],    /* Mumbai */
+      [88, 22, 0.6, 8],     /* Kolkata */
+      [100, 13, 0.5, 7],    /* Bangkok */
+      [121, 31, 0.9, 12],   /* Shanghai */
+      [116, 39, 0.9, 12],   /* Beijing */
+      [139, 35, 1.0, 13],   /* Tokyo */
+      [126, 37, 0.7, 9],    /* Seoul */
+      [151, -33, 0.6, 8],   /* Sydney */
+      [-99, 19, 0.7, 9],    /* Mexico City */
+      [55, 25, 0.5, 7],     /* Dubai */
+      [106, -6, 0.6, 8],    /* Jakarta */
+      [103, 1, 0.5, 7],     /* Singapore */
+    ];
+    for (const [lon, lat, intensity, spread] of cities) {
+      const [cx, cy] = toC(lon, lat);
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, spread);
+      const a = Math.round(intensity * 180);
+      grad.addColorStop(0, `rgba(255, 220, 140, ${intensity * 0.9})`);
+      grad.addColorStop(0.4, `rgba(255, 180, 80, ${intensity * 0.4})`);
+      grad.addColorStop(1, 'rgba(255, 160, 50, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - spread, cy - spread, spread * 2, spread * 2);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    return tex;
+  }, []);
+
+  /* Rotate Earth to match real-world orientation via GMST */
+  useFrame(() => {
+    if (!meshRef.current) return;
+    const rot = gmstRotation(timestamp);
+    meshRef.current.rotation.y = -rot - Math.PI / 2;
   });
 
   return (
-    <mesh ref={meshRef} rotation={[0, -Math.PI / 2, 0]}>
+    <mesh ref={meshRef}>
       <sphereGeometry args={[R_EARTH, 96, 64]} />
-      {/* meshBasicMaterial is unaffected by scene lighting — renders the
-          canvas texture exactly as drawn, guaranteeing visibility */}
-      <meshBasicMaterial map={texture} />
+      <meshStandardMaterial
+        map={dayTexture}
+        emissiveMap={nightTexture}
+        emissive={new THREE.Color('#ffffff')}
+        emissiveIntensity={1.2}
+        roughness={0.85}
+        metalness={0.05}
+      />
     </mesh>
+  );
+}
+
+/* ── Sunlight — directional light positioned at the Sun ── */
+function Sunlight() {
+  const lightRef = useRef();
+  const timestamp = useStore((s) => s.timestamp);
+
+  useFrame(() => {
+    if (!lightRef.current) return;
+    const dir = sunDirection(timestamp);
+    lightRef.current.position.set(dir.x * 50, dir.y * 50, dir.z * 50);
+  });
+
+  return (
+    <directionalLight
+      ref={lightRef}
+      color="#fff5e6"
+      intensity={2.2}
+      position={[50, 0, 0]}
+    />
   );
 }
 
@@ -578,6 +704,10 @@ export default function GlobeView() {
       style={{ background: '#020810' }}
       dpr={[1, 2]}
     >
+      {/* Lighting: dim ambient so night side is dark + sun directional */}
+      <ambientLight intensity={0.08} color="#1a2a4a" />
+      <Sunlight />
+
       {/* Stars */}
       <Stars radius={250} depth={80} count={5000} factor={4} fade speed={0.3} />
 
