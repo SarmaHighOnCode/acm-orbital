@@ -81,9 +81,15 @@ class ManeuverPlanner:
         Returns:
             Delta-v [dx, dy, dz] in km/s (ECI frame).
         """
-        R_hat: np.ndarray = r_eci / np.linalg.norm(r_eci)
+        r_mag = np.linalg.norm(r_eci)
+        if r_mag < 1e-10:
+            return dv_rtn  # Degenerate: return RTN as-is
+        R_hat: np.ndarray = r_eci / r_mag
         h: np.ndarray     = np.cross(r_eci, v_eci)
-        N_hat: np.ndarray = h / np.linalg.norm(h)
+        h_mag = np.linalg.norm(h)
+        if h_mag < 1e-10:
+            return dv_rtn  # Zero angular momentum: cannot define RTN frame
+        N_hat: np.ndarray = h / h_mag
         T_hat: np.ndarray = np.cross(N_hat, R_hat)
         Q: np.ndarray     = np.column_stack([R_hat, T_hat, N_hat])
         return Q @ dv_rtn

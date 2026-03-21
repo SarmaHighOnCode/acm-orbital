@@ -87,9 +87,21 @@ export default function FuelHeatmap() {
         <span className="text-eol">EOL: {statusCounts.EOL}</span>
       </div>
 
-      {/* Fleet fuel summary */}
-      <div className="text-[9px] font-mono text-gray-500 mb-2">
-        Fleet total: {totalFuel.toFixed(1)} kg / {satellites.length * 50} kg
+      {/* Fleet fuel summary with progress bar */}
+      <div className="mb-2">
+        <div className="flex justify-between text-[9px] font-mono text-gray-500 mb-0.5">
+          <span>Fleet: {totalFuel.toFixed(1)} / {satellites.length * 50} kg</span>
+          <span>{satellites.length > 0 ? ((totalFuel / (satellites.length * 50)) * 100).toFixed(1) : 0}%</span>
+        </div>
+        <div className="h-1.5 bg-space-700 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${satellites.length > 0 ? (totalFuel / (satellites.length * 50)) * 100 : 0}%`,
+              background: `linear-gradient(90deg, #ff3355, #ffaa00 40%, #00ff88 80%)`,
+            }}
+          />
+        </div>
       </div>
 
       {/* Fuel bars */}

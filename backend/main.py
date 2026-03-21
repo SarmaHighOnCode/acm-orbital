@@ -286,7 +286,6 @@ app.include_router(maneuver_router, prefix="/api")
 app.include_router(simulate_router, prefix="/api")
 app.include_router(visualization_router, prefix="/api")
 
-
 # ── Health Check ─────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -299,9 +298,11 @@ async def health_check():
     }
 
 
+
 # ── Static Files (Frontend) ─────────────────────────────────────────────
 # Mount AFTER routers so API routes take precedence.
-# In production, the React build output lives in ./static/
+# In production (Docker), the React build output lives in ./static/
+# Skipped if ACM_NO_STATIC=1 (dev mode with Vite proxy).
 static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
+if static_dir.exists() and os.environ.get("ACM_NO_STATIC", "0") != "1":
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")

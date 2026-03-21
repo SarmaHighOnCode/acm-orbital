@@ -450,11 +450,22 @@ export default function ManeuverTimeline() {
     return () => ro.disconnect();
   }, [draw]);
 
+  // Count blackout satellites
+  const blackedCount = Object.values(blackoutStatus).filter(Boolean).length;
+
   return (
     <div className="w-full h-full flex flex-col">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
-        Maneuver Timeline
-      </h3>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          Maneuver Timeline
+        </h3>
+        <div className="flex items-center gap-2 text-[9px] font-mono">
+          {blackedCount > 0 && (
+            <span className="text-orange-400">{blackedCount} in blackout</span>
+          )}
+          <span className="text-gray-500">{maneuverLog.length} burns</span>
+        </div>
+      </div>
       <div className="flex-1 min-h-0">
         <canvas
           ref={canvasRef}

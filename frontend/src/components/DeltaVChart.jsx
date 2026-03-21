@@ -148,12 +148,12 @@ export default function DeltaVChart() {
     ctx.fillText('Fuel Consumed \u0394V (m/s)', 0, 0);
     ctx.restore();
 
-    // ── Summary box ──
+    // ── Summary box (enhanced with efficiency ratio) ──
     ctx.fillStyle = '#111827';
-    ctx.fillRect(padL + 5, padT + 2, 145, 32);
+    ctx.fillRect(padL + 5, padT + 2, 160, 44);
     ctx.strokeStyle = '#1f2937';
     ctx.lineWidth = 0.5;
-    ctx.strokeRect(padL + 5, padT + 2, 145, 32);
+    ctx.strokeRect(padL + 5, padT + 2, 160, 44);
     ctx.fillStyle = '#06b6d4';
     ctx.font = '9px Inter, monospace';
     ctx.textAlign = 'left';
@@ -164,6 +164,12 @@ export default function DeltaVChart() {
       padL + 10,
       padT + 26
     );
+    // Efficiency ratio: m/s per evasion
+    if (evasionCount > 0) {
+      const efficiency = totalDv / evasionCount;
+      ctx.fillStyle = '#9ca3af';
+      ctx.fillText(`Efficiency: ${efficiency.toFixed(2)} m/s per evasion`, padL + 10, padT + 38);
+    }
   }, [maneuverLog, collisionCount]);
 
   useEffect(() => { draw(); }, [draw]);

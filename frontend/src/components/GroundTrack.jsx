@@ -233,9 +233,25 @@ export default function GroundTrack() {
       ctx.fillText(`${lat}\u00b0`, w - 3, y + 3);
     }
 
-    // ── Ground station markers (filled triangles) ──
+    // ── Ground station coverage circles + markers ──
     for (const gs of GROUND_STATIONS) {
       const { x, y } = geoToMercator(gs.lat, gs.lon, w, h);
+
+      // Coverage circle (~2500 km radius at LEO 400km ≈ ~22° ground arc)
+      const coverageRadiusDeg = 22;
+      const rx = (coverageRadiusDeg / 360) * w;
+      const ry = (coverageRadiusDeg / 180) * h;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(74, 144, 217, 0.04)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(74, 144, 217, 0.15)';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Triangle marker
       const s = 5;
       ctx.beginPath();
       ctx.moveTo(x, y - s);
@@ -247,7 +263,7 @@ export default function GroundTrack() {
       ctx.strokeStyle = '#6abaff';
       ctx.lineWidth = 0.5;
       ctx.stroke();
-      ctx.fillStyle = '#4a90d9';
+      ctx.fillStyle = '#6abaff';
       ctx.font = '7px Inter, monospace';
       ctx.textAlign = 'center';
       ctx.fillText(gs.name, x, y + s + 9);
@@ -368,6 +384,72 @@ export default function GroundTrack() {
       `Ground Track \u2014 ${satellites.length} sats \u00b7 ${debrisCloud.length.toLocaleString()} debris \u00b7 ${cdms.length} CDMs`,
       12, 16
     );
+
+    // ── Legend (bottom-left) ──
+    const lx = 8;
+    let ly = h - 8;
+    ctx.font = '8px Inter, monospace';
+    ctx.textAlign = 'left';
+    const legendItems = [
+      { color: '#00ff88', label: 'Nominal' },
+      { color: '#ffaa00', label: 'Evading' },
+      { color: '#3b82f6', label: 'Recovering' },
+      { color: '#ff3355', label: 'EOL' },
+      { color: 'rgba(100,116,139,0.6)', label: 'Debris' },
+      { color: '#4a90d9', label: 'Ground Stn' },
+    ];
+    // Background box
+    const legendH = legendItems.length * 11 + 6;
+    ctx.fillStyle = 'rgba(10, 14, 26, 0.85)';
+    ctx.fillRect(lx - 2, ly - legendH + 4, 80, legendH);
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(lx - 2, ly - legendH + 4, 80, legendH);
+    ly = ly - legendH + 14;
+    for (const item of legendItems) {
+      ctx.fillStyle = item.color;
+      ctx.fillRect(lx, ly - 4, 6, 6);
+      ctx.fillStyle = '#6b7280';
+      ctx.fillText(item.label, lx + 10, ly + 1);
+      ly += 11;
+    }
+
+    // ── Selected Satellite Info Box (bottom-right) ──
+    const selSat = satellites.find((s) => s.id === selectedSatellite);
+    if (selSat) {
+      const bw = 160;
+      const bh = 52;
+      const bx = w - bw - 6;
+      const by = h - bh - 6;
+      ctx.fillStyle = 'rgba(10, 14, 26, 0.9)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = '#00ff8833';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, bw, bh);
+
+      ctx.fillStyle = '#00ff88';
+      ctx.font = 'bold 9px Inter, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(selSat.id.replace('SAT-Alpha-', '\u03b1'), bx + 6, by + 12);
+      ctx.fillStyle = STATUS_COLORS[selSat.status] || '#6b7280';
+      ctx.font = '8px Inter, monospace';
+      ctx.fillText(selSat.status, bx + 40, by + 12);
+
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '8px Inter, monospace';
+      ctx.fillText(`LAT ${selSat.lat.toFixed(2)}\u00b0  LON ${selSat.lon.toFixed(2)}\u00b0`, bx + 6, by + 24);
+      ctx.fillText(`ALT ${(selSat.alt_km || selSat.alt || 400).toFixed(0)} km`, bx + 6, by + 35);
+
+      // Fuel mini-bar
+      const fuelPct = Math.max(0, (selSat.fuel_kg / 50) * 100);
+      const fuelColor = fuelPct > 70 ? '#00ff88' : fuelPct > 30 ? '#ffaa00' : '#ff3355';
+      ctx.fillStyle = '#1f2937';
+      ctx.fillRect(bx + 6, by + 40, bw - 50, 5);
+      ctx.fillStyle = fuelColor;
+      ctx.fillRect(bx + 6, by + 40, (bw - 50) * fuelPct / 100, 5);
+      ctx.fillStyle = '#6b7280';
+      ctx.fillText(`${selSat.fuel_kg.toFixed(1)}kg`, bx + bw - 40, by + 45);
+    }
   }, [satellites, debrisCloud, timestamp, satHistory, cdms, selectedSatellite]);
 
   useEffect(() => {
