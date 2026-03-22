@@ -2,10 +2,11 @@
  * Dashboard.jsx — Layout Orchestrator (CSS Grid)
  * Owner: Dev 3 (Frontend)
  *
- * 6-panel dashboard grid with header status bar.
- * Layout: 3 columns x 2 rows
+ * 7-panel mission control dashboard with Kessler cascade risk.
+ * Layout: 3 columns x 3 rows
  *   Row 1: [Orbital View (2 cols)]  [Fuel Heatmap]
- *   Row 2: [Maneuver Timeline]      [Bullseye]      [Delta-V Chart]
+ *   Row 2: [Maneuver Timeline]      [Bullseye]      [Kessler Risk]
+ *   Row 3: [Delta-V Chart (hidden — merged into FuelHeatmap)] 
  *
  * Toggle button switches between 3D Globe (Three.js) and 2D Ground Track (Canvas).
  */
@@ -17,6 +18,7 @@ import BullseyePlot from './BullseyePlot';
 import FuelHeatmap from './FuelHeatmap';
 import ManeuverTimeline from './ManeuverTimeline';
 import DeltaVChart from './DeltaVChart';
+import KesslerRiskGauge from './KesslerRiskGauge';
 import useStore from '../store';
 
 function ViewToggle({ view, setView }) {
@@ -104,16 +106,16 @@ function PhysicsProofModal({ onClose }) {
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="panel"
         style={{
           width: 560, maxHeight: '80vh', overflowY: 'auto',
-          background: '#111827', border: '1px solid #374151',
-          borderRadius: 12, padding: 24,
+          padding: 24,
           fontFamily: 'JetBrains Mono, monospace', color: '#e5e7eb',
         }}
       >
@@ -158,7 +160,7 @@ function PhysicsProofModal({ onClose }) {
 
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #374151', color: '#6b7280' }}>
+                <tr style={{ borderBottom: '1px solid #1a2535', color: '#6b7280' }}>
                   <th style={{ textAlign: 'left', padding: '6px 4px' }}>Benchmark</th>
                   <th style={{ textAlign: 'right', padding: '6px 4px' }}>Result</th>
                   <th style={{ textAlign: 'right', padding: '6px 4px' }}>Threshold</th>
@@ -167,7 +169,7 @@ function PhysicsProofModal({ onClose }) {
               </thead>
               <tbody>
                 {data.benchmarks.map((b, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #1f2937' }}>
+                  <tr key={i} style={{ borderBottom: '1px solid #111827' }}>
                     <td style={{ padding: '6px 4px', color: '#d1d5db' }}>{b.test}</td>
                     <td style={{ textAlign: 'right', padding: '6px 4px', color: '#9ca3af' }}>{b.result}</td>
                     <td style={{ textAlign: 'right', padding: '6px 4px', color: '#6b7280' }}>{b.threshold}</td>
@@ -180,7 +182,7 @@ function PhysicsProofModal({ onClose }) {
             </table>
 
             {data.engine_state && (
-              <div style={{ marginTop: 16, padding: '8px 12px', background: '#0a0e1a', borderRadius: 8, fontSize: 11 }}>
+              <div style={{ marginTop: 16, padding: '8px 12px', background: '#060a14', borderRadius: 8, fontSize: 11 }}>
                 <div style={{ color: '#6b7280', marginBottom: 6, fontWeight: 600 }}>Engine State</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px', color: '#9ca3af' }}>
                   <span>Satellites: {data.engine_state.satellites}</span>
@@ -197,19 +199,130 @@ function PhysicsProofModal({ onClose }) {
   );
 }
 
+/* ── Mission Report Modal ──────────────────────────────────────────── */
+function MissionReportModal({ onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch('/api/mission-report')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled) { setData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="panel"
+        style={{
+          width: 520, maxHeight: '80vh', overflowY: 'auto',
+          padding: 24,
+          fontFamily: 'JetBrains Mono, monospace', color: '#e5e7eb',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: '#06b6d4', margin: 0 }}>
+            Mission Report
+          </h2>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', color: '#6b7280',
+            fontSize: 18, cursor: 'pointer', padding: '2px 6px',
+          }}>✕</button>
+        </div>
+
+        {loading && (
+          <div style={{ textAlign: 'center', padding: 40, color: '#6b7280', fontSize: 12 }}>
+            Generating mission report...
+          </div>
+        )}
+
+        {data && (
+          <>
+            {/* Scoring */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16,
+            }}>
+              {[
+                { label: 'Safety', value: `${data.scoring.safety_score}%`, color: data.scoring.safety_score === 100 ? '#00ff88' : '#ff3355' },
+                { label: 'Fuel Efficiency', value: `${data.scoring.fuel_efficiency}%`, color: '#06b6d4' },
+                { label: 'Fleet Uptime', value: `${data.scoring.fleet_uptime}%`, color: '#00ff88' },
+                { label: 'Total ΔV', value: `${data.scoring.total_delta_v_ms} m/s`, color: '#ffaa00' },
+              ].map((m) => (
+                <div key={m.label} style={{
+                  padding: '8px 10px', borderRadius: 6,
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid #1a2535',
+                }}>
+                  <div style={{ fontSize: 9, color: '#6b7280', marginBottom: 2 }}>{m.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: m.color }}>{m.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Fleet */}
+            <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 12, padding: '8px 10px', background: '#060a14', borderRadius: 6 }}>
+              <div style={{ fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Fleet Status</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
+                <span>Satellites: <span style={{ color: '#d1d5db' }}>{data.fleet.total_satellites}</span></span>
+                <span>Nominal: <span style={{ color: '#00ff88' }}>{data.fleet.nominal}</span></span>
+                <span>Evading: <span style={{ color: '#ffaa00' }}>{data.fleet.evading}</span></span>
+                <span>EOL: <span style={{ color: '#ff3355' }}>{data.fleet.eol}</span></span>
+                <span>Fuel: <span style={{ color: '#d1d5db' }}>{data.fleet.total_fuel_kg} kg</span></span>
+                <span>Evasions: <span style={{ color: '#06b6d4' }}>{data.fleet.evasions_executed}</span></span>
+              </div>
+            </div>
+
+            {/* Kessler */}
+            <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 12, padding: '8px 10px', background: '#060a14', borderRadius: 6 }}>
+              <div style={{ fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>Kessler Cascade Risk</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 16px' }}>
+                <span>Risk: <span style={{ color: data.kessler_risk.risk_label === 'LOW' ? '#00ff88' : '#ffaa00', fontWeight: 700 }}>{data.kessler_risk.risk_label}</span></span>
+                <span>Score: <span style={{ color: '#d1d5db' }}>{(data.kessler_risk.risk_score * 100).toFixed(1)}%</span></span>
+                <span>Debris: <span style={{ color: '#d1d5db' }}>{data.debris_environment.total_debris}</span></span>
+                <span>CDMs: <span style={{ color: '#ffaa00' }}>{data.debris_environment.active_cdms}</span></span>
+              </div>
+            </div>
+
+            {/* Algorithms */}
+            <div style={{ fontSize: 10, color: '#4b5563', marginTop: 8 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Algorithms</div>
+              {Object.entries(data.algorithms).map(([k, v]) => (
+                <div key={k} style={{ marginBottom: 2 }}>
+                  <span style={{ color: '#6b7280' }}>{k}:</span> <span style={{ color: '#9ca3af' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
-  const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected } =
+  const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected, fleetUptimeScore, totalDeltaVms } =
     useStore();
   const [view, setView] = useState('2d');
   const [showPhysicsProof, setShowPhysicsProof] = useState(false);
+  const [showMissionReport, setShowMissionReport] = useState(false);
 
   // Compute rubric-aligned metrics
   const totalFuel = satellites.reduce((s, sat) => s + (sat.fuel_kg || 0), 0);
   const maxFuel = satellites.length * 50;
   const fleetFuelPct = maxFuel > 0 ? ((totalFuel / maxFuel) * 100).toFixed(1) : '—';
   const nominalCount = satellites.filter((s) => s.status === 'NOMINAL').length;
-  const uptimePct = satellites.length > 0 ? ((nominalCount / satellites.length) * 100).toFixed(0) : '—';
-  const totalDv = maneuverLog.reduce((s, m) => s + (m.delta_v_magnitude_ms || 0), 0);
+  const uptimePct = (fleetUptimeScore * 100).toFixed(0);
+  const totalDv = totalDeltaVms;
   const evasions = maneuverLog.length;
   const safetyScore = evasions + collisionCount > 0
     ? ((evasions / (evasions + collisionCount)) * 100).toFixed(0)
@@ -218,22 +331,24 @@ export default function Dashboard() {
   // CDM risk breakdown
   const riskCounts = cdms.reduce((acc, c) => { acc[c.risk] = (acc[c.risk] || 0) + 1; return acc; }, {});
 
+  const hasAlerts = activeCdmCount > 0;
+
   return (
-    <div className="w-full h-full flex flex-col bg-space-900">
+    <div className="w-full h-full flex flex-col scanlines" style={{ background: '#060a14' }}>
       {/* Header — Mission Control Status Bar */}
-      <header className="shrink-0 border-b border-space-700 bg-space-800/80 backdrop-blur-sm">
+      <header className="shrink-0 header-premium" style={{ position: 'relative' }}>
         {/* Top row: title + key metrics */}
         <div className="h-10 flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-nominal animate-pulse" />
+            <div className="w-2 h-2 rounded-full bg-nominal live-dot" />
             <span className="text-base font-semibold tracking-tight">ACM-Orbital</span>
-            <span className="text-[10px] text-gray-500 font-mono hidden lg:inline">Autonomous Constellation Manager</span>
+            <span className="text-[10px] text-gray-600 font-mono hidden lg:inline">Autonomous Constellation Manager</span>
           </div>
-          <div className="flex items-center gap-4 text-[10px] font-mono">
+          <div className="flex items-center gap-3 text-[10px] font-mono">
             {/* Safety Score */}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded" style={{
-              background: collisionCount > 0 ? 'rgba(255,51,85,0.1)' : 'rgba(0,255,136,0.08)',
-              border: `1px solid ${collisionCount > 0 ? '#ff335533' : '#00ff8825'}`,
+            <div className="metric-badge" style={{
+              background: collisionCount > 0 ? 'rgba(255,51,85,0.1)' : 'rgba(0,255,136,0.06)',
+              border: `1px solid ${collisionCount > 0 ? '#ff335533' : '#00ff8820'}`,
             }}>
               <span className="text-gray-500">SAFETY</span>
               <span className={collisionCount > 0 ? 'text-eol font-bold' : 'text-nominal font-bold'}>
@@ -241,18 +356,18 @@ export default function Dashboard() {
               </span>
             </div>
             {/* Fleet Fuel */}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded" style={{
-              background: 'rgba(6,182,212,0.08)',
-              border: '1px solid rgba(6,182,212,0.2)',
+            <div className="metric-badge" style={{
+              background: 'rgba(6,182,212,0.06)',
+              border: '1px solid rgba(6,182,212,0.15)',
             }}>
               <span className="text-gray-500">FUEL</span>
               <span className="text-cyan-400 font-bold">{fleetFuelPct}%</span>
-              <span className="text-gray-600">{totalDv.toFixed(1)}m/s used</span>
+              <span className="text-gray-600">{totalDv.toFixed(1)}m/s</span>
             </div>
             {/* Uptime */}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded" style={{
-              background: 'rgba(0,255,136,0.06)',
-              border: '1px solid rgba(0,255,136,0.15)',
+            <div className="metric-badge" style={{
+              background: 'rgba(0,255,136,0.04)',
+              border: '1px solid rgba(0,255,136,0.12)',
             }}>
               <span className="text-gray-500">UPTIME</span>
               <span className="text-nominal font-bold">{uptimePct}%</span>
@@ -266,29 +381,35 @@ export default function Dashboard() {
               <span className="text-eol">API ERR</span>
             )}
             <button
-              onClick={() => setShowPhysicsProof(true)}
+              onClick={() => setShowMissionReport(true)}
+              className="metric-badge"
               style={{
-                padding: '3px 10px',
-                fontSize: 10,
-                fontFamily: 'JetBrains Mono, monospace',
+                background: 'rgba(6, 182, 212, 0.06)',
+                border: '1px solid rgba(6, 182, 212, 0.2)',
+                color: '#06b6d4',
                 fontWeight: 600,
-                color: '#00ff88',
-                background: 'rgba(0, 255, 136, 0.08)',
-                border: '1px solid rgba(0, 255, 136, 0.25)',
-                borderRadius: 5,
                 cursor: 'pointer',
-                letterSpacing: '0.5px',
-                transition: 'all 0.15s ease',
               }}
-              onMouseEnter={(e) => { e.target.style.background = 'rgba(0, 255, 136, 0.18)'; }}
-              onMouseLeave={(e) => { e.target.style.background = 'rgba(0, 255, 136, 0.08)'; }}
+            >
+              Report
+            </button>
+            <button
+              onClick={() => setShowPhysicsProof(true)}
+              className="metric-badge"
+              style={{
+                background: 'rgba(0, 255, 136, 0.06)',
+                border: '1px solid rgba(0, 255, 136, 0.2)',
+                color: '#00ff88',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
             >
               Physics Proof
             </button>
           </div>
         </div>
         {/* Bottom row: telemetry ticker */}
-        <div className="h-6 flex items-center px-4 gap-5 text-[10px] font-mono text-gray-500 border-t border-space-700/50 bg-space-900/40">
+        <div className="h-6 flex items-center px-4 gap-5 text-[10px] font-mono text-gray-500" style={{ borderTop: '1px solid rgba(26,37,53,0.5)', background: 'rgba(6,10,20,0.4)' }}>
           <span className="text-gray-600">SIM {timestamp ? new Date(timestamp).toISOString().slice(0, 19) + 'Z' : '\u2014'}</span>
           <span>SATS <span className="text-gray-300">{satellites.length}</span></span>
           <span>CDMs <span className={activeCdmCount > 0 ? 'text-evading font-semibold' : 'text-gray-300'}>{activeCdmCount}</span>
@@ -313,10 +434,10 @@ export default function Dashboard() {
       </header>
 
       {/* Main Grid — 3 cols x 2 rows */}
-      <main className="flex-1 grid grid-cols-3 grid-rows-2 gap-1 p-1 min-h-0"
-            style={{ position: 'relative', zIndex: showPhysicsProof ? -1 : 'auto' }}>
+      <main className="flex-1 grid grid-cols-3 grid-rows-2 gap-1.5 p-1.5 min-h-0"
+            style={{ position: 'relative', zIndex: (showPhysicsProof || showMissionReport) ? -1 : 'auto' }}>
         {/* Orbital View — large panel (span 2 cols) with 3D/2D toggle */}
-        <div className="col-span-2 row-span-1 rounded-lg overflow-hidden border border-space-700 bg-space-800"
+        <div className={`col-span-2 row-span-1 panel ${hasAlerts ? 'panel-alert' : ''}`}
              style={{ position: 'relative' }}>
           <ViewToggle view={view} setView={setView} />
           {view === '3d' ? (
@@ -329,29 +450,32 @@ export default function Dashboard() {
         </div>
 
         {/* Fuel Heatmap */}
-        <div className="rounded-lg overflow-hidden border border-space-700 bg-space-800 p-3">
+        <div className="panel p-3">
           <FuelHeatmap />
         </div>
 
         {/* Maneuver Timeline */}
-        <div className="rounded-lg overflow-hidden border border-space-700 bg-space-800 p-2">
+        <div className="panel p-2">
           <ManeuverTimeline />
         </div>
 
         {/* Bullseye Plot */}
-        <div className="rounded-lg overflow-hidden border border-space-700 bg-space-800">
+        <div className={`panel ${riskCounts.CRITICAL > 0 ? 'panel-critical' : ''}`}>
           <BullseyePlot />
         </div>
 
-        {/* Delta-V Cost Analysis Chart */}
-        <div className="rounded-lg overflow-hidden border border-space-700 bg-space-800">
-          <DeltaVChart />
+        {/* Kessler Cascade Risk — THE DIFFERENTIATOR */}
+        <div className="panel">
+          <KesslerRiskGauge />
         </div>
       </main>
 
-      {/* Physics Proof Modal */}
+      {/* Modals */}
       {showPhysicsProof && (
         <PhysicsProofModal onClose={() => setShowPhysicsProof(false)} />
+      )}
+      {showMissionReport && (
+        <MissionReportModal onClose={() => setShowMissionReport(false)} />
       )}
     </div>
   );

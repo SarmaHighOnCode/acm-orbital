@@ -26,6 +26,8 @@ const useStore = create((set, get) => ({
   cdms: [],
   maneuverLog: [],
   collisionCount: 0,
+  fleetUptimeScore: 1.0,
+  totalDeltaVms: 0,
 
   // Rolling satellite position history (for ground track trails)
   // { [satId]: [{ lat, lon, t }, ...] }
@@ -66,6 +68,8 @@ const useStore = create((set, get) => ({
         cdms: snapshot.cdms || [],
         maneuverLog: snapshot.maneuver_log || [],
         collisionCount: snapshot.collision_count || 0,
+        fleetUptimeScore: snapshot.fleet_uptime_score ?? 1.0,
+        totalDeltaVms: snapshot.total_delta_v_ms ?? 0,
         satHistory: newHistory,
         // Auto-select: prefer a satellite with active CDMs for the bullseye,
         // fall back to first satellite if none have CDMs
