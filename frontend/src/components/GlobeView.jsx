@@ -746,8 +746,18 @@ function GroundStationMarker({ gs }) {
 }
 
 function GroundStationMarkers() {
+  const groupRef = useRef();
+  const timestamp = useStore((s) => s.timestamp);
+
+  // Rotate ground stations with the Earth (same GMST rotation as Earth mesh)
+  useFrame(() => {
+    if (!groupRef.current) return;
+    const rot = gmstRotation(timestamp);
+    groupRef.current.rotation.y = -rot - Math.PI / 2;
+  });
+
   return (
-    <group>
+    <group ref={groupRef}>
       {GROUND_STATIONS.map((gs) => <GroundStationMarker key={gs.id} gs={gs} />)}
     </group>
   );
