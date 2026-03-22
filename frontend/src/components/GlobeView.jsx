@@ -205,7 +205,7 @@ function Earth() {
   return (
     <mesh ref={meshRef}>
       <sphereGeometry args={[R_EARTH, 128, 80]} />
-      <meshBasicMaterial map={dayTexture} />
+      <meshBasicMaterial map={nightTexture} />
     </mesh>
   );
 }
