@@ -164,6 +164,8 @@ async def kessler_risk(request: Request):
 @router.get("/debris-density")
 async def debris_density(request: Request):
     """Debris density per altitude band — identifies ISRO concern zones."""
+    from config import R_EARTH
+
     engine = _get_engine(request)
 
     async with request.app.state.engine_lock:
@@ -173,8 +175,8 @@ async def debris_density(request: Request):
     if len(deb_positions) == 0 and len(sat_positions) == 0:
         return {"bands": [], "total_debris": 0, "total_satellites": 0}
 
-    deb_alts = np.linalg.norm(deb_positions, axis=1) - 6371.0 if len(deb_positions) > 0 else np.array([])
-    sat_alts = np.linalg.norm(sat_positions, axis=1) - 6371.0 if len(sat_positions) > 0 else np.array([])
+    deb_alts = np.linalg.norm(deb_positions, axis=1) - R_EARTH if len(deb_positions) > 0 else np.array([])
+    sat_alts = np.linalg.norm(sat_positions, axis=1) - R_EARTH if len(sat_positions) > 0 else np.array([])
 
     bands = []
     for alt_min in range(200, 2001, 50):
