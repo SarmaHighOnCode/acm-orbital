@@ -14,22 +14,18 @@ J2-perturbed DOP853 orbital propagation | 4-stage KDTree conjunction assessment 
 
 ---
 
-## How to Run
-
-### Docker (Recommended)
+## Quick Start
 
 ```bash
-docker build -t acm-orbital .
-docker run -p 8000:8000 acm-orbital
+git clone https://github.com/SarmaHighOnCode/acm-orbital.git
+cd acm-orbital
+docker compose build --no-cache
+docker compose up
 ```
 
-Open **http://localhost:8000** in your browser. The dashboard auto-seeds 50 satellites + 10,000 debris and begins continuous simulation immediately.
+Wait for `AUTO_SEED | Complete — dashboard ready` in the terminal (~60 seconds), then open **http://localhost:8000**.
 
-### Docker Compose
-
-```bash
-docker compose up --build
-```
+The engine automatically seeds **50 satellites + 10,000 debris objects** and runs 5 simulation steps so the dashboard is fully populated on first load — no manual setup required.
 
 ### Manual (Development)
 
