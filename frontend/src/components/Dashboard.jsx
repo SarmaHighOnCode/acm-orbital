@@ -2,11 +2,10 @@
  * Dashboard.jsx — Layout Orchestrator (CSS Grid)
  * Owner: Dev 3 (Frontend)
  *
- * 7-panel mission control dashboard with Kessler cascade risk.
- * Layout: 3 columns x 3 rows
- *   Row 1: [Orbital View (2 cols)]  [Fuel Heatmap]
- *   Row 2: [Maneuver Timeline]      [Bullseye]      [Kessler Risk]
- *   Row 3: [Delta-V Chart (hidden — merged into FuelHeatmap)] 
+ * 8-panel mission control dashboard with Kessler cascade risk.
+ * Layout: 4 columns x 2 rows
+ *   Row 1: [Orbital View (2 cols)]  [Fuel Heatmap]  [Delta-V Chart]
+ *   Row 2: [Maneuver Timeline (2 cols)]  [Bullseye]  [Kessler Risk]
  *
  * Toggle button switches between 3D Globe (Three.js) and 2D Ground Track (Canvas).
  */
@@ -433,8 +432,8 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Main Grid — 3 cols x 2 rows */}
-      <main className="flex-1 grid grid-cols-3 grid-rows-2 gap-1.5 p-1.5 min-h-0"
+      {/* Main Grid — 4 cols x 2 rows */}
+      <main className="flex-1 grid grid-cols-4 grid-rows-2 gap-1.5 p-1.5 min-h-0"
             style={{ position: 'relative', zIndex: (showPhysicsProof || showMissionReport) ? -1 : 'auto' }}>
         {/* Orbital View — large panel (span 2 cols) with 3D/2D toggle */}
         <div className={`col-span-2 row-span-1 panel ${hasAlerts ? 'panel-alert' : ''}`}
@@ -454,8 +453,13 @@ export default function Dashboard() {
           <FuelHeatmap />
         </div>
 
-        {/* Maneuver Timeline */}
+        {/* Delta-V Cost Analysis — spec-required visualization */}
         <div className="panel p-2">
+          <DeltaVChart />
+        </div>
+
+        {/* Maneuver Timeline — spans 2 cols for readability */}
+        <div className="col-span-2 panel p-2">
           <ManeuverTimeline />
         </div>
 
