@@ -20,6 +20,7 @@ Tick sequence (PRD §4.7):
 from __future__ import annotations
 
 import json
+from collections import deque
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -137,12 +138,14 @@ class SimulationEngine:
         self.satellites: dict[str, Satellite] = {}
         self.debris: dict[str, Debris] = {}
         self.active_cdms: list[CDM] = []
-        self.collision_log: list[dict] = []
-        self.maneuver_log: list[dict] = []
+        self.collision_log: deque[dict] = deque(maxlen=500)
+        self.maneuver_log: deque[dict] = deque(maxlen=500)
         self.collision_count: int = 0
 
         # Uptime tracking — seconds each satellite spends outside station-keeping box
         self.time_outside_box: dict[str, float] = {}
+
+        self._last_ca_scan_time: datetime | None = None
 
         # Subsystem components
         self.propagator    = OrbitalPropagator(rtol=RTOL, atol=ATOL)
@@ -594,23 +597,31 @@ class SimulationEngine:
                     self.maneuver_log.append(log_entry)
 
         # ── Step 3a: 24-hour CDM scan (uses final post-burn states) ──
-        sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
-        # Adaptive lookahead: scale down for very large debris clouds
-        _step_n_deb = len(self.debris)
-        _step_lookahead = 86400.0 if _step_n_deb <= 2000 else (
-            7200.0 if _step_n_deb <= 5000 else 1800.0
-        )
-        self.active_cdms = self.assessor.assess(
-            sat_states_snapshot,
-            {d.id: d.state_vector for d in self.debris.values()},
-            lookahead_s=_step_lookahead,
-            current_time=target_time,
-        )
-        self.active_cdms.extend(self.assessor.assess_sat_vs_sat(
-            sat_states_snapshot,
-            lookahead_s=_step_lookahead,
-            current_time=target_time,
-        ))
+        # Throttle expensive CA scans: only run if at least 60s of sim time elapsed
+        scan_needed = True
+        if getattr(self, '_last_ca_scan_time', None) is not None:
+            if (target_time - self._last_ca_scan_time).total_seconds() < 60.0:
+                scan_needed = False
+
+        if scan_needed:
+            sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
+            # Adaptive lookahead: scale down for very large debris clouds
+            _step_n_deb = len(self.debris)
+            _step_lookahead = 86400.0 if _step_n_deb <= 2000 else (
+                7200.0 if _step_n_deb <= 5000 else 1800.0
+            )
+            self.active_cdms = self.assessor.assess(
+                sat_states_snapshot,
+                {d.id: d.state_vector for d in self.debris.values()},
+                lookahead_s=_step_lookahead,
+                current_time=target_time,
+            )
+            self.active_cdms.extend(self.assessor.assess_sat_vs_sat(
+                sat_states_snapshot,
+                lookahead_s=_step_lookahead,
+                current_time=target_time,
+            ))
+            self._last_ca_scan_time = target_time
 
         # ── Step 3b: Collision scan at sub-samples (burn-aware) ──
         if self.satellites and self.debris and _deb_ids:
@@ -675,19 +686,57 @@ class SimulationEngine:
                         self.collision_log.append(entry)
 
         # ── Step 4: Station-keeping status + Uptime tracking ──
+        from config import MU_EARTH
         for sat in self.satellites.values():
             if sat.status == "EOL":
                 continue
 
-            slot_offset = float(np.linalg.norm(
-                sat.position - sat.nominal_state[:3]
-            ))
+            # Compute orbital elements offset rather than ECI Euclidean offset
+            r_vec = sat.position
+            v_vec = sat.velocity
+            r_norm = np.linalg.norm(r_vec)
+            v_norm = np.linalg.norm(v_vec)
+            
+            # Specific Energy and Semi-major axis
+            E = 0.5 * v_norm**2 - MU_EARTH / r_norm
+            a = -MU_EARTH / (2 * E)
+            
+            nom_r_vec = sat.nominal_state[:3]
+            nom_v_vec = sat.nominal_state[3:]
+            nom_r_norm = np.linalg.norm(nom_r_vec)
+            nom_v_norm = np.linalg.norm(nom_v_vec)
+            
+            nom_E = 0.5 * nom_v_norm**2 - MU_EARTH / nom_r_norm
+            nom_a = -MU_EARTH / (2 * nom_E)
+            
+            a_diff = abs(a - nom_a)
+            
+            # Cross-track error (angle between angular momentum vectors)
+            h = np.cross(r_vec, v_vec)
+            h_nom = np.cross(nom_r_vec, nom_v_vec)
+            h_norm = np.linalg.norm(h)
+            h_nom_norm = np.linalg.norm(h_nom)
+            
+            if h_norm > 0 and h_nom_norm > 0:
+                cos_theta = np.dot(h, h_nom) / (h_norm * h_nom_norm)
+                cos_theta = np.clip(cos_theta, -1.0, 1.0)
+                plane_angle = np.arccos(cos_theta)
+            else:
+                plane_angle = 0.0
+                
+            xtrack_err = r_norm * plane_angle
+            
+            # Combine radial and cross-track proxies. Phase difference is intentionally ignored.
+            slot_offset = float(np.sqrt(a_diff**2 + xtrack_err**2))
             in_slot = slot_offset <= STATION_KEEPING_RADIUS_KM
 
             if not in_slot:
                 self.time_outside_box[sat.id] = (
                     self.time_outside_box.get(sat.id, 0.0) + step_seconds
                 )
+            else:
+                # Uptime score must not permanently degrade if satellite returns to slot
+                self.time_outside_box[sat.id] = 0.0
 
             if sat.status == "EVADING" and sat.maneuver_queue:
                 continue
@@ -723,6 +772,13 @@ class SimulationEngine:
 
         # ── Step 5: Auto-plan evasion maneuvers ──
         self._auto_plan_maneuvers(target_time)
+
+        # ── Step 5b: Safety cap on maneuver queues ──
+        # Prevent unbounded growth from auto-planner over long sessions
+        for sat in self.satellites.values():
+            if len(sat.maneuver_queue) > 20:
+                sat.maneuver_queue.sort(key=lambda x: x["burnTime"])
+                sat.maneuver_queue = sat.maneuver_queue[:20]
 
         # ── Step 6: EOL threshold check ──
         for sat_id, sat in self.satellites.items():
@@ -1009,17 +1065,6 @@ class SimulationEngine:
 
         total_queued = sum(len(s.maneuver_queue) for s in self.satellites.values())
 
-        # Fleet-level uptime score (exponential decay penalty for time outside box)
-        if satellites:
-            fleet_uptime = sum(s["uptime_score"] for s in satellites) / len(satellites)
-        else:
-            fleet_uptime = 1.0
-
-        # Cumulative fleet delta-v from maneuver log
-        total_delta_v_ms = sum(
-            m.get("delta_v_magnitude_ms", 0.0) for m in self.maneuver_log
-        )
-
         # CDM summaries for frontend bullseye + timeline
         cdm_list = []
         for cdm in self.active_cdms:
@@ -1040,8 +1085,6 @@ class SimulationEngine:
             "active_cdm_count":    len(self.active_cdms),
             "maneuver_queue_depth": total_queued,
             "cdms":                cdm_list,
-            "maneuver_log":        self.maneuver_log[-50:],  # Last 50 events
+            "maneuver_log":        list(self.maneuver_log)[-50:],  # Last 50 events
             "collision_count":     self.collision_count,
-            "fleet_uptime_score":  round(fleet_uptime, 4),
-            "total_delta_v_ms":    round(total_delta_v_ms, 2),
         }

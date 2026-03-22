@@ -96,22 +96,23 @@ async def physics_proof(request: Request):
     raan_drift = abs(raan1 - raan0)
     results.append({"test": "J2 RAAN Drift (SSO 98°, 24h)", "result": f"{raan_drift:.4f} deg/day", "threshold": "0.5-1.5 deg/day expected", "status": "PASS" if 0.1 < raan_drift < 3.0 else "FAIL"})
 
-    # 6. Engine State
+    # 6. Engine State (read under lock to avoid race with auto-step)
     if engine:
-        n_sats = len(engine.satellites)
-        uptime_scores = []
-        for sid in engine.satellites:
-            t_out = engine.time_outside_box.get(sid, 0.0)
-            uptime_scores.append(float(np.exp(-0.001 * t_out)))
-        fleet_uptime = sum(uptime_scores) / n_sats if n_sats > 0 else 1.0
-        eng_state = {
-            "satellites": n_sats,
-            "debris": len(engine.debris),
-            "active_cdms": len(engine.active_cdms),
-            "sim_time": engine.sim_time.isoformat(),
-            "collision_count": engine.collision_count,
-            "uptime_score": f"{fleet_uptime:.4f}",
-        }
+        async with request.app.state.engine_lock:
+            n_sats = len(engine.satellites)
+            uptime_scores = []
+            for sid in engine.satellites:
+                t_out = engine.time_outside_box.get(sid, 0.0)
+                uptime_scores.append(float(np.exp(-0.001 * t_out)))
+            fleet_uptime = sum(uptime_scores) / n_sats if n_sats > 0 else 1.0
+            eng_state = {
+                "satellites": n_sats,
+                "debris": len(engine.debris),
+                "active_cdms": len(engine.active_cdms),
+                "sim_time": engine.sim_time.isoformat(),
+                "collision_count": engine.collision_count,
+                "uptime_score": f"{fleet_uptime:.4f}",
+            }
     else:
         eng_state = {"satellites": 0, "debris": 0, "active_cdms": 0, "sim_time": "N/A", "collision_count": 0, "uptime_score": "N/A"}
 
@@ -226,9 +227,10 @@ async def mission_report(request: Request):
             t_out = engine.time_outside_box.get(sid, 0.0)
             uptime_scores.append(float(np.exp(-0.001 * t_out)))
         fleet_uptime = sum(uptime_scores) / n_sats if n_sats > 0 else 1.0
+        evasion_count = len(engine.maneuver_log)
+        collision_count_snap = engine.collision_count
 
-    evasion_count = len(engine.maneuver_log)
-    safety_score = (evasion_count / (evasion_count + engine.collision_count) * 100) if (evasion_count + engine.collision_count) > 0 else 100.0
+    safety_score = (evasion_count / (evasion_count + collision_count_snap) * 100) if (evasion_count + collision_count_snap) > 0 else 100.0
 
     return {
         "mission": "ACM-Orbital Autonomous Constellation Manager",

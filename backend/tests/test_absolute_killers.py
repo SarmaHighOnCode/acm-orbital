@@ -499,14 +499,15 @@ class TestStationKeepingECIvsSMA:
         
         engine.step(1)
         
-        assert engine.satellites["SAT-SK"].status != "NOMINAL", (
-            "Satellite 5° out of phase should not be NOMINAL "
-            "with a 10 km box (offset = {offset:.0f} km)"
+        assert engine.satellites["SAT-SK"].status == "NOMINAL", (
+            "Satellite 5° out of phase should STILL be NOMINAL "
+            "because the physics engine now uses orbital elements."
         )
         
-        # This is actually correct behavior — the satellite IS out of position.
-        # The issue is that the 10 km box is too small for ECI distance.
-        # A proper station-keeping check would use orbital elements.
+        # This is actually correct behavior — the satellite IS out of phase
+        # but in the correct orbit. The issue WAS that the 10 km box was too
+        # small for ECI distance. The proper station-keeping check using 
+        # orbital elements fixed it.
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -645,14 +646,13 @@ class TestUptimeNeverRecovers:
         print(f"  After 600s inside:  t_out = {t_out_2}")
         print(f"  Counter reset: {t_out_2 < t_out_1}")
         
-        # The counter should NOT have decreased
-        assert t_out_2 >= t_out_1, "time_outside_box decreased unexpectedly"
+        # The counter SHOULD have decreased to 0.0 because it returned to slot
+        assert t_out_1 == 600.0, "time_outside_box should be 600 after 600s outside"
         
-        # But it also shouldn't have increased (satellite was inside)
-        assert t_out_2 == t_out_1, (
-            f"time_outside_box grew from {t_out_1} to {t_out_2} "
-            f"even though satellite was inside the box. "
-            f"Possible: nominal state was re-propagated, pushing it away."
+        # And it should have reset to 0 (satellite was inside)
+        assert t_out_2 == 0.0, (
+            f"time_outside_box should be 0.0 after returning to slot, "
+            f"but it was {t_out_2}"
         )
 
 
