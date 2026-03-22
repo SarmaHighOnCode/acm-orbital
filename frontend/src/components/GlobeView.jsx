@@ -78,13 +78,13 @@ function Earth() {
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    /* Ocean gradient */
+    /* Ocean gradient — brighter blues for visible day side */
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0,    '#0a2a60');
-    grad.addColorStop(0.15, '#1a5090');
-    grad.addColorStop(0.5,  '#2068b8');
-    grad.addColorStop(0.85, '#1a5090');
-    grad.addColorStop(1,    '#0a2a60');
+    grad.addColorStop(0,    '#0d3570');
+    grad.addColorStop(0.15, '#2060a8');
+    grad.addColorStop(0.5,  '#2878d0');
+    grad.addColorStop(0.85, '#2060a8');
+    grad.addColorStop(1,    '#0d3570');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
@@ -115,8 +115,8 @@ function Earth() {
       ctx.closePath(); ctx.fill(); ctx.stroke();
     };
 
-    const F = 'rgba(45, 145, 65, 0.97)';
-    const S = 'rgba(90, 210, 110, 0.85)';
+    const F = 'rgba(55, 165, 75, 0.97)';
+    const S = 'rgba(100, 220, 120, 0.85)';
 
     drawLand([[-168,71],[-140,70],[-100,74],[-82,70],[-65,47],[-55,47],[-60,44],
               [-75,44],[-80,25],[-85,30],[-90,28],[-105,20],[-118,32],[-122,37],
