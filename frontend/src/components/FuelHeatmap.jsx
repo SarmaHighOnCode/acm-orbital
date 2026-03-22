@@ -11,7 +11,27 @@
  */
 
 import React, { useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import useStore from '../store';
+
+const STATUS_COLORS = {
+  NOMINAL: '#00ff88',
+  EVADING: '#ffaa00',
+  RECOVERING: '#3b82f6',
+  EOL: '#ff3355',
+};
+
+function CostTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-space-800 border border-space-600 rounded px-2 py-1 text-xs">
+      <p className="text-gray-300 font-mono">{d.fullId}</p>
+      <p className="text-gray-400">Consumed: {d.consumed.toFixed(2)} kg</p>
+      <p style={{ color: STATUS_COLORS[d.status] }}>{d.status}</p>
+    </div>
+  );
+}
 
 function FuelBar({ id, fuelKg, status, maxFuel = 50, onClick, isSelected }) {
   const pct = Math.max(0, (fuelKg / maxFuel) * 100);
@@ -73,6 +93,17 @@ export default function FuelHeatmap() {
 
   const totalFuel = satellites.reduce((s, sat) => s + sat.fuel_kg, 0);
 
+  const chartData = useMemo(
+    () =>
+      satellites.map((sat) => ({
+        shortId: sat.id.slice(-4),
+        fullId: sat.id,
+        consumed: 50 - sat.fuel_kg,
+        status: sat.status,
+      })),
+    [satellites]
+  );
+
   return (
     <div className="w-full h-full flex flex-col">
       <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
@@ -121,6 +152,44 @@ export default function FuelHeatmap() {
           <p className="text-gray-600 text-sm">Awaiting telemetry data...</p>
         )}
       </div>
+
+      {/* Δv Cost Analysis chart (from abc branch) */}
+      {satellites.length > 0 && (
+        <div className="mt-2 shrink-0">
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+            Δv Cost Analysis
+          </h3>
+          <div style={{ width: '100%', height: 120 }}>
+            <ResponsiveContainer>
+              <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
+                <XAxis
+                  dataKey="shortId"
+                  tick={{ fill: '#9ca3af', fontSize: 9 }}
+                  axisLine={{ stroke: '#4b5563' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: '#9ca3af', fontSize: 9 }}
+                  axisLine={{ stroke: '#4b5563' }}
+                  tickLine={false}
+                  label={{
+                    value: 'kg',
+                    position: 'insideTopLeft',
+                    offset: 10,
+                    style: { fill: '#6b7280', fontSize: 9 },
+                  }}
+                />
+                <Tooltip content={<CostTooltip />} cursor={false} />
+                <Bar dataKey="consumed" radius={[2, 2, 0, 0]}>
+                  {chartData.map((entry, idx) => (
+                    <Cell key={idx} fill={STATUS_COLORS[entry.status] || '#6b7280'} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
