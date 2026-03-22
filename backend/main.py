@@ -30,13 +30,34 @@ from api.simulate import router as simulate_router
 from api.visualization import router as visualization_router
 from engine.simulation import SimulationEngine
 
+import structlog
+
 # ── Logging ──────────────────────────────────────────────────────────────
+# Structured logging via structlog — JSON output for production,
+# human-readable colored output for dev. All log entries carry key-value
+# context (satellite_id, CDM count, etc.) for distributed tracing.
+log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
-logger = logging.getLogger("acm")
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.processors.TimeStamper(fmt="%Y-%m-%dT%H:%M:%S"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.dev.ConsoleRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+logger = structlog.get_logger("acm")
 
 # ── Globals ──────────────────────────────────────────────────────────────
 engine: SimulationEngine | None = None

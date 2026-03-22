@@ -6,9 +6,12 @@
   --color-nominal: #00ff88;
   --color-evading: #ffaa00;
   --color-eol: #ff3355;
-  --color-bg: #0a0e1a;
-  --color-panel: #111827;
-  --color-border: #1f2937;
+  --color-bg: #060a14;
+  --color-panel: #0d1520;
+  --color-border: #1a2535;
+  --color-isro-saffron: #ff6b00;
+  --color-glow-green: rgba(0, 255, 136, 0.15);
+  --color-glow-cyan: rgba(6, 182, 212, 0.12);
 }
 
 * {
@@ -30,14 +33,158 @@ body {
   height: 100vh;
 }
 
-/* Scrollbar styling */
+/* ── Premium Panel Class ─────────────────────────────────────────── */
+.panel {
+  background: linear-gradient(
+    135deg,
+    rgba(13, 21, 32, 0.95) 0%,
+    rgba(10, 16, 28, 0.98) 100%
+  );
+  border: 1px solid rgba(30, 45, 65, 0.6);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 255, 136, 0.08),
+    transparent 40%,
+    rgba(6, 182, 212, 0.06)
+  );
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.panel:hover {
+  border-color: rgba(0, 255, 136, 0.2);
+  box-shadow:
+    0 0 20px rgba(0, 255, 136, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.panel-alert {
+  border-color: rgba(255, 170, 0, 0.35) !important;
+  box-shadow: 0 0 15px rgba(255, 170, 0, 0.08);
+}
+
+.panel-critical {
+  border-color: rgba(255, 51, 85, 0.4) !important;
+  box-shadow: 0 0 20px rgba(255, 51, 85, 0.1);
+  animation: critical-pulse 2s ease-in-out infinite;
+}
+
+/* ── Scan-Line Overlay (Mission Control CRT feel) ────────────────── */
+.scanlines::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* ── Animations ──────────────────────────────────────────────────── */
+@keyframes critical-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 51, 85, 0.1); }
+  50% { box-shadow: 0 0 30px rgba(255, 51, 85, 0.2); }
+}
+
+@keyframes live-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+@keyframes glow-border {
+  0%, 100% { border-color: rgba(0, 255, 136, 0.15); }
+  50% { border-color: rgba(0, 255, 136, 0.3); }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.live-dot {
+  animation: live-dot 1.5s ease-in-out infinite;
+}
+
+.glow-border {
+  animation: glow-border 3s ease-in-out infinite;
+}
+
+/* ── Header premium gradient ─────────────────────────────────────── */
+.header-premium {
+  background: linear-gradient(
+    180deg,
+    rgba(13, 21, 32, 0.95) 0%,
+    rgba(8, 13, 22, 0.98) 100%
+  );
+  border-bottom: 1px solid rgba(30, 45, 65, 0.5);
+  backdrop-filter: blur(12px);
+}
+
+.header-premium::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 255, 136, 0.15) 20%,
+    rgba(6, 182, 212, 0.1) 50%,
+    rgba(0, 255, 136, 0.15) 80%,
+    transparent
+  );
+}
+
+/* ── Metric badge ────────────────────────────────────────────────── */
+.metric-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  backdrop-filter: blur(4px);
+  transition: all 0.2s ease;
+}
+
+.metric-badge:hover {
+  transform: translateY(-1px);
+}
+
+/* ── Scrollbar styling ───────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-bg);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: rgba(30, 45, 65, 0.6);
   border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(50, 75, 100, 0.6);
 }

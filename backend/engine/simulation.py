@@ -1009,6 +1009,17 @@ class SimulationEngine:
 
         total_queued = sum(len(s.maneuver_queue) for s in self.satellites.values())
 
+        # Fleet-level uptime score (exponential decay penalty for time outside box)
+        if satellites:
+            fleet_uptime = sum(s["uptime_score"] for s in satellites) / len(satellites)
+        else:
+            fleet_uptime = 1.0
+
+        # Cumulative fleet delta-v from maneuver log
+        total_delta_v_ms = sum(
+            m.get("delta_v_magnitude_ms", 0.0) for m in self.maneuver_log
+        )
+
         # CDM summaries for frontend bullseye + timeline
         cdm_list = []
         for cdm in self.active_cdms:
@@ -1031,4 +1042,6 @@ class SimulationEngine:
             "cdms":                cdm_list,
             "maneuver_log":        self.maneuver_log[-50:],  # Last 50 events
             "collision_count":     self.collision_count,
+            "fleet_uptime_score":  round(fleet_uptime, 4),
+            "total_delta_v_ms":    round(total_delta_v_ms, 2),
         }

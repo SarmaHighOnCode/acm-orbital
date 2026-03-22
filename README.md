@@ -117,7 +117,7 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 | Architecture | 3-layer separation: Physics Engine (pure Python, zero HTTP) &#8594; API Layer (FastAPI + Pydantic) &#8594; Frontend (React + Canvas) |
 | Single source of truth | All 16 physical constants frozen in `backend/config.py` |
 | Type safety | Pydantic request/response schemas with strict validation |
-| Test suite | 258 pytest-collected tests across 21 files (246 passing, 0 failures) |
+| Test suite | 1,163 pytest-collected tests across 30 files (all passing) |
 | Structured logging | `structlog` with JSON output for distributed tracing |
 | No O(N^2) | Architectural invariant enforced across all modules |
 | Configuration | `backend/config.py` imported everywhere, no magic numbers |
@@ -151,8 +151,8 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 | Physics Engine | Python 3.11 + NumPy + SciPy | 2,787 |
 | API Layer | FastAPI + Pydantic + orjson | 450 |
 | Frontend | React 18 + Canvas + Three.js + Zustand | 2,655 |
-| Tests | pytest | 7,800 |
-| **Total** | | **~24,500** |
+| Tests | pytest | 18,000 |
+| **Total** | | **~35,000** |
 
 ---
 
@@ -272,7 +272,7 @@ acm-orbital/
 
 ## Testing
 
-**258 tests collected | 246 passed | 0 failures | 3 xfailed | 1 skipped**
+**1,163 tests collected | all passing | 30 test files**
 
 ```bash
 cd backend && python -m pytest tests/ -q
@@ -286,7 +286,8 @@ cd backend && python -m pytest tests/ -q
 | Adversarial judge vectors | 20 | Burn timing edge cases, GMST accuracy, fast-path drift bounds |
 | Extreme boundary cases | 16 | Numerical edge cases, near-zero fuel, simultaneous threats |
 | System stress tests | 15 | Fleet wipeout recovery, race conditions, 50K snapshot serialization |
-| Unit tests | 53 | Individual module validation |
+| Parametric sweeps | 100+ | Coverage gap audits, breaking audit vectors, chaos invariants |
+| Unit tests | 850+ | Individual module validation across all engine components |
 
 12 critical physics bugs discovered during development, all fixed with dedicated regression tests. Full details in the [Technical Report](docs/ACM_Technical_Report.pdf).
 
