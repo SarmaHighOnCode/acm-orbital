@@ -205,14 +205,7 @@ function Earth() {
   return (
     <mesh ref={meshRef}>
       <sphereGeometry args={[R_EARTH, 128, 80]} />
-      <meshStandardMaterial
-        map={dayTexture}
-        emissiveMap={nightTexture}
-        emissive={new THREE.Color('#ffffff')}
-        emissiveIntensity={1.2}
-        roughness={0.85}
-        metalness={0.05}
-      />
+      <meshBasicMaterial map={dayTexture} />
     </mesh>
   );
 }
@@ -884,9 +877,8 @@ export default function GlobeView() {
       style={{ background: '#020810' }}
       dpr={[1, 2]}
     >
-      {/* Lighting */}
-      <ambientLight intensity={0.08} color="#1a2a4a" />
-      <Sunlight />
+      {/* Ambient only — no directional sun, uniform look */}
+      <ambientLight intensity={0.6} color="#334466" />
 
       {/* Stars — denser for depth */}
       <Stars radius={250} depth={80} count={7000} factor={4} fade speed={0.3} />
