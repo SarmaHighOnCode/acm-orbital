@@ -21,7 +21,7 @@ import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.telemetry import router as telemetry_router
@@ -321,9 +321,26 @@ async def health_check():
 
 
 # ── Static Files (Frontend) ─────────────────────────────────────────────
+async def serve_spa_or_static(full_path: str):
+    """
+    Catch-all route for SPA:
+    1. Try to serve exact file from static_dir (e.g., manifest.json, favicon.ico)
+    2. Fallback to index.html for any other route (SPA client-side routing)
+    """
+    # static_dir is defined below in the same module scope
+    file_path = static_dir / full_path
+    if full_path and file_path.is_file():
+        return FileResponse(file_path)
+    return FileResponse(static_dir / "index.html")
+
+
+# ── Static Files (Frontend) ─────────────────────────────────────────────
 # Mount AFTER routers so API routes take precedence.
 # In production (Docker), the React build output lives in ./static/
 # Skipped if ACM_NO_STATIC=1 (dev mode with Vite proxy).
-static_dir = Path(__file__).parent / "static"
+static_dir = (Path(__file__).parent / "static").resolve()
 if static_dir.exists() and os.environ.get("ACM_NO_STATIC", "0") != "1":
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
+    # Mount StaticFiles first for efficient asset serving at root
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+    # Add the catch-all route
+    app.add_api_route("/{full_path:path}", serve_spa_or_static, methods=["GET"])
