@@ -28,7 +28,7 @@ COPY backend/ /app/backend/
 
 # ── Phase 3: Frontend Build ───────────────────────────────────────────────
 COPY frontend/package.json frontend/package-lock.json* /app/frontend/
-RUN cd /app/frontend && npm ci --production=false
+RUN cd /app/frontend && npm install --production=false
 
 COPY frontend/ /app/frontend/
 RUN cd /app/frontend && npm run build \
