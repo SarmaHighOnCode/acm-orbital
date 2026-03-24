@@ -424,6 +424,10 @@ Every evasion is paired with a Clohessy--Wiltshire-based recovery burn that
 returns the satellite to its nominal station-keeping slot. The recovery burn is
 scheduled after the debris has passed ($> 50$\,km separation), minimizing the
 time spent outside the 10\,km station-keeping box for uptime scoring.
+\textbf{Approximation note}: The CW linearization assumes small relative
+separations ($\lesssim 2$--5\,km); triggering recovery at 50\,km introduces
+unmodeled higher-order drift terms, which are compensated by the
+station-keeping box check that re-corrects residual slot deviation each tick.
 
 \subsection{EOL Graveyard Protocol}
 
