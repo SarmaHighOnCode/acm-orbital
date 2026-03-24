@@ -92,10 +92,10 @@ class FuelTracker:
         if delta_v_ms > MAX_DV_PER_BURN + 1.0:
             logger.critical(
                 "FUEL | %s | delta_v_ms=%.4f exceeds max burn (%.1f m/s) — "
-                "clamping to MAX_DV_PER_BURN. Likely unit error.",
+                "rejecting burn execution.",
                 sat_id, delta_v_ms, MAX_DV_PER_BURN,
             )
-            delta_v_ms = MAX_DV_PER_BURN
+            raise ValueError(f"Burn delta-v {delta_v_ms:.4f} m/s exceeds limit of {MAX_DV_PER_BURN} m/s")
 
         current_fuel: float = self._fuel.get(sat_id, 0.0)
         fuel_consumed = self.estimate_fuel_consumption(sat_id, delta_v_ms)

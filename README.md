@@ -242,6 +242,20 @@ Compressed frontend state: satellites, CDMs, debris cloud, maneuver log.
 curl http://localhost:8000/api/visualization/snapshot
 ```
 
+### POST `/api/simulate/autostep`
+
+Toggle the background auto-step simulation loop on or off.
+
+```bash
+curl -X POST http://localhost:8000/api/simulate/autostep \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+**Response:** `{"status": "AUTO_STEP_UPDATED", "auto_step_enabled": true}`
+
+Auto-step is **disabled by default**. Use the dashboard toggle or this endpoint to start/stop the background simulation loop.
+
 ### GET `/health`
 
 Container health check.
@@ -261,7 +275,7 @@ acm-orbital/
     schemas.py                  # Pydantic API contracts
     api/
       telemetry.py              # POST /api/telemetry
-      simulate.py               # POST /api/simulate/step
+      simulate.py               # POST /api/simulate/step + /autostep
       maneuver.py               # POST /api/maneuver/schedule
       visualization.py          # GET /api/visualization/snapshot
     engine/
@@ -274,7 +288,7 @@ acm-orbital/
       models.py                 # Satellite/Debris data classes
     data/
       ground_stations.csv       # 6 stations (Bengaluru, Svalbard, Goldstone, Punta Arenas, IIT Delhi, McMurdo)
-    tests/                      # 258 tests across 21 files
+    tests/                      # 1,163 tests across 30 files
   frontend/
     src/
       App.jsx                   # Root + 2s snapshot polling
@@ -287,6 +301,7 @@ acm-orbital/
         FuelHeatmap.jsx         # Fleet fuel gauges
         DeltaVChart.jsx         # Fuel vs collisions avoided
         ManeuverTimeline.jsx    # Gantt burn timeline with blackouts
+        KesslerRiskGauge.jsx    # Kessler cascade risk visualization
       utils/
         api.js                  # Snapshot fetcher with retry
         coordinates.js          # ECI/geodetic transforms
@@ -344,7 +359,7 @@ cd backend && python -m pytest tests/ -q
 - **Port**: `8000` bound to `0.0.0.0`
 - **Single container**: Frontend Vite build copied to `backend/static/`, served by FastAPI
 - **Auto-seed**: 50 satellites + 10,000 debris populated on startup
-- **Auto-step**: Background loop advances simulation 100s every 2s
+- **Auto-step**: Disabled by default — toggleable via dashboard button or `POST /api/simulate/autostep`. When enabled, advances 100s every 2s. Manual `+100s Step` button available when paused.
 - **Health check**: `GET /health` for container orchestration
 
 ---
@@ -361,3 +376,5 @@ cd backend && python -m pytest tests/ -q
 ---
 
 Built at IIT Delhi for the National Space Hackathon 2026.
+
+**Team:** Prajnadeep Sarma · Jaideep · Contributors

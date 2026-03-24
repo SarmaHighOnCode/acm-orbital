@@ -886,41 +886,38 @@ class SimulationEngine:
                 continue
 
             # IDENTIFY THE EARLIEST THREAT (PRD §4.5)
-            most_critical = min(group, key=lambda c: c.tca)
+            # Instead of just the earliest, we plan for up to 2 distinct threats
+            # to avoid completely ignoring simultaneous CRITICAL conjunctions
+            sorted_threats = sorted(group, key=lambda c: c.tca)[:2]
             
-            # Identify the "other" object in the conjunction
-            other_id = most_critical.debris_id if most_critical.satellite_id == sat_id else most_critical.satellite_id
-            
-            target = self.debris.get(other_id)
-            if target is None:
-                target = self.satellites.get(other_id)
-            
-            if target is None:
-                continue
-
-            # ── Health-Aware Handshake (Global Optimization) ──
-            # If both are satellites, coordinate so only the healthier one burns.
-            if target.obj_type == "SATELLITE":
-                sat_fuel = self.fuel_tracker.get_fuel(sat_id)
-                target_fuel = self.fuel_tracker.get_fuel(target.id)
+            planned_any = False
+            for most_critical in sorted_threats:
+                # Identify the "other" object in the conjunction
+                other_id = most_critical.debris_id if most_critical.satellite_id == sat_id else most_critical.satellite_id
                 
-                # If target satellite is significantly healthier (>2kg more fuel),
-                # let it handle the burn instead of the current satellite.
-                if target_fuel > sat_fuel + 2.0:
-                    logger.info("AUTO-PLAN | %s | Yielding evasion to healthier peer %s (%.1fkg > %.1fkg)",
-                                sat_id, target.id, target_fuel, sat_fuel)
-                    continue 
+                target = self.debris.get(other_id)
+                if target is None:
+                    target = self.satellites.get(other_id)
                 
-                # If fuel levels are ties or current is healthier, current takes the burn.
-                # If target is healthier by < 2kg, current still takes it to avoid 
-                # both yielding or both burning. 
-                # (The healthier one will evaluate this too and will NOT yield).
+                if target is None:
+                    continue
 
-            burns = self.planner.plan_evasion(
-                satellite=sat, debris=target,
-                tca=most_critical.tca, miss_distance_km=most_critical.miss_distance_km,
-                current_time=current_time,
-            )
+                # ── Health-Aware Handshake (Global Optimization) ──
+                # If both are satellites, coordinate so only the healthier one burns.
+                if target.obj_type == "SATELLITE":
+                    sat_fuel = self.fuel_tracker.get_fuel(sat_id)
+                    target_fuel = self.fuel_tracker.get_fuel(target.id)
+                    
+                    if target_fuel > sat_fuel + 2.0:
+                        logger.info("AUTO-PLAN | %s | Yielding evasion to healthier peer %s (%.1fkg > %.1fkg)",
+                                    sat_id, target.id, target_fuel, sat_fuel)
+                        continue 
+
+                burns = self.planner.plan_evasion(
+                    satellite=sat, debris=target,
+                    tca=most_critical.tca, miss_distance_km=most_critical.miss_distance_km,
+                    current_time=current_time,
+                )
 
             # LOS blackout guard: reschedule out-of-contact burns (PRD §4.4)
             if burns:
@@ -933,7 +930,9 @@ class SimulationEngine:
                 if max_dt > 0:
                     dense_sol = self.propagator.propagate_dense(sat.state_vector, max_dt)
                 else:
-                    dense_sol = lambda t: sat.state_vector
+                    def _fallback_dense_sol(t):
+                        return sat.state_vector
+                    dense_sol = _fallback_dense_sol
 
                 for burn in burns:
                     bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
@@ -1005,9 +1004,11 @@ class SimulationEngine:
                 sat.maneuver_queue.extend(validated_burns)
                 sat.status = "EVADING"
                 logger.info(
-                    "AUTO-PLAN | %s | Grouped %d threats | Planned evasion for (%s) miss=%.4f km",
-                    sat_id, len(group), target.id, most_critical.miss_distance_km
+                    "AUTO-PLAN | %s | Planned evasion for (%s) miss=%.4f km",
+                    sat_id, target.id, most_critical.miss_distance_km
                 )
+                planned_any = True
+                
             elif burns:
                 # Evasion was planned but all burns were skipped due to LOS blackout
                 logger.critical(
@@ -1015,6 +1016,8 @@ class SimulationEngine:
                     sat_id, target.id, 
                     most_critical.tca.isoformat() if hasattr(most_critical.tca, 'isoformat') else most_critical.tca
                 )
+                
+            if planned_any: break  # Only fully plan for one threat segment; queue rest later if needed.
 
     def get_snapshot(self) -> dict:
         """Return the current simulation state for frontend rendering.
@@ -1029,15 +1032,19 @@ class SimulationEngine:
             Snapshot dict with satellites, debris_cloud, CDMs, maneuver log,
             collision count, and uptime scores.
         """
+        fleet_uptime_score = 0.0
         satellites = []
         if self.satellites:
             sat_ids = list(self.satellites.keys())
             sat_positions = np.array([sat.position for sat in self.satellites.values()])
             sat_lla = _eci_to_lla_batch(sat_positions, self.sim_time)
             
+            total_score = 0.0
             for i, sid in enumerate(sat_ids):
                 sat = self.satellites[sid]
                 t_out = self.time_outside_box.get(sid, 0.0)
+                score = float(np.exp(-0.001 * t_out))
+                total_score += score
                 satellites.append({
                     "id":       sat.id,
                     "lat":      round(float(sat_lla[i, 0]), 3),
@@ -1045,10 +1052,11 @@ class SimulationEngine:
                     "alt_km":   round(float(sat_lla[i, 2]), 1),
                     "fuel_kg":  max(0.0, round(self.fuel_tracker.get_fuel(sat.id), 2)),
                     "status":   sat.status,
-                    "uptime_score": round(float(np.exp(-0.001 * t_out)), 4),
+                    "uptime_score": round(score, 4),
                     "time_outside_box_s": round(t_out, 1),
                     "queued_burns": len(sat.maneuver_queue),
                 })
+            fleet_uptime_score = round(total_score / len(self.satellites), 4)
 
         debris_cloud = []
         if self.debris:
@@ -1089,4 +1097,5 @@ class SimulationEngine:
             "maneuver_log":        list(self.maneuver_log)[-50:],  # Last 50 events
             "collision_count":     self.collision_count,
             "auto_step_enabled":   self.auto_step_enabled,
+            "fleet_uptime_score":  fleet_uptime_score,
         }

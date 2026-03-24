@@ -27,6 +27,13 @@ async def ingest_telemetry(
     request: Request,
 ):
     """Ingest telemetry data for satellites and debris."""
+    if len(payload.objects) > 15000:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=413, 
+            detail="Payload too large: maximum 15,000 objects allowed per request to prevent OOM."
+        )
+
     engine = _get_engine(request)
     async with request.app.state.engine_lock:
         # Pass payload.objects directly to avoid redundant serialization of 10k objects
