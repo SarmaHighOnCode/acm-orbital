@@ -91,6 +91,11 @@ class SimulateStepResponse(BaseModel):
     maneuvers_executed: int
 
 
+class SimulateAutoStepRequest(BaseModel):
+    """POST /api/simulate/autostep — request body."""
+    enabled: bool
+
+
 # ── Visualization Snapshot ───────────────────────────────────────────────
 
 class SatelliteSnapshot(BaseModel):
@@ -126,3 +131,4 @@ class SnapshotResponse(BaseModel):
     cdms: list[CDMSnapshot] = []
     maneuver_log: list[dict] = []      # Last 50 maneuver execution events
     collision_count: int = 0
+    auto_step_enabled: bool = False

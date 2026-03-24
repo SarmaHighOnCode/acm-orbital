@@ -11,7 +11,7 @@ import logging
 
 from fastapi import APIRouter, Request
 
-from schemas import SimulateStepRequest, SimulateStepResponse
+from schemas import SimulateStepRequest, SimulateStepResponse, SimulateAutoStepRequest
 
 logger = logging.getLogger("acm.api.simulate")
 router = APIRouter(tags=["simulate"])
@@ -37,3 +37,16 @@ async def simulate_step(
         result.get("maneuvers_executed", 0),
     )
     return SimulateStepResponse(**result)
+
+
+@router.post("/simulate/autostep")
+async def toggle_autostep(
+    payload: SimulateAutoStepRequest,
+    request: Request,
+):
+    """Toggle the background auto-step loop."""
+    engine = _get_engine(request)
+    async with request.app.state.engine_lock:
+        engine.auto_step_enabled = payload.enabled
+    logger.info("SIMULATE | Auto-step enabled set to: %s", payload.enabled)
+    return {"status": "SUCCESS", "auto_step_enabled": getattr(engine, "auto_step_enabled", payload.enabled)}

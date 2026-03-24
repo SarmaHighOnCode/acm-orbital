@@ -38,6 +38,7 @@ const useStore = create((set, get) => ({
   isLoading: false,
   error: null,
   connected: true,
+  autoStepEnabled: false,
 
   // Actions
   setSnapshot: (snapshot) =>
@@ -70,6 +71,7 @@ const useStore = create((set, get) => ({
         collisionCount: snapshot.collision_count || 0,
         fleetUptimeScore: snapshot.fleet_uptime_score ?? 1.0,
         totalDeltaVms: snapshot.total_delta_v_ms ?? 0,
+        autoStepEnabled: snapshot.auto_step_enabled ?? false,
         satHistory: newHistory,
         // Auto-select: prefer a satellite with active CDMs for the bullseye,
         // fall back to first satellite if none have CDMs
@@ -87,6 +89,7 @@ const useStore = create((set, get) => ({
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error }),
   setConnected: (val) => set({ connected: val }),
+  setAutoStepEnabled: (val) => set({ autoStepEnabled: val }),
 }));
 
 export default useStore;

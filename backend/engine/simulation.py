@@ -141,6 +141,7 @@ class SimulationEngine:
         self.collision_log: deque[dict] = deque(maxlen=500)
         self.maneuver_log: deque[dict] = deque(maxlen=500)
         self.collision_count: int = 0
+        self.auto_step_enabled: bool = False
 
         # Uptime tracking — seconds each satellite spends outside station-keeping box
         self.time_outside_box: dict[str, float] = {}
@@ -1087,4 +1088,5 @@ class SimulationEngine:
             "cdms":                cdm_list,
             "maneuver_log":        list(self.maneuver_log)[-50:],  # Last 50 events
             "collision_count":     self.collision_count,
+            "auto_step_enabled":   self.auto_step_enabled,
         }

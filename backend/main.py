@@ -228,12 +228,13 @@ async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
         await asyncio.sleep(step_interval)
         try:
             async with lock:
-                await loop.run_in_executor(None, eng.step, step_size)
-                step_count += 1
-                # Re-inject threats every step so CDMs persist across the
-                # J2-perturbed propagation (co-orbital debris diverges within
-                # a single 100s step due to differential RAAN precession)
-                await loop.run_in_executor(None, _reinject_threats, eng)
+                if getattr(eng, "auto_step_enabled", True):
+                    await loop.run_in_executor(None, eng.step, step_size)
+                    step_count += 1
+                    # Re-inject threats every step so CDMs persist across the
+                    # J2-perturbed propagation (co-orbital debris diverges within
+                    # a single 100s step due to differential RAAN precession)
+                    await loop.run_in_executor(None, _reinject_threats, eng)
         except asyncio.CancelledError:
             break
         except Exception as exc:

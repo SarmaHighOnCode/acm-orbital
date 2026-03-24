@@ -309,7 +309,7 @@ function MissionReportModal({ onClose }) {
 }
 
 export default function Dashboard() {
-  const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected, fleetUptimeScore, totalDeltaVms } =
+  const { timestamp, activeCdmCount, satellites, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected, fleetUptimeScore, totalDeltaVms, autoStepEnabled } =
     useStore();
   const [view, setView] = useState('2d');
   const [showPhysicsProof, setShowPhysicsProof] = useState(false);
@@ -331,6 +331,34 @@ export default function Dashboard() {
   const riskCounts = cdms.reduce((acc, c) => { acc[c.risk] = (acc[c.risk] || 0) + 1; return acc; }, {});
 
   const hasAlerts = activeCdmCount > 0;
+
+  const toggleAutoStep = async () => {
+    try {
+      const newVal = !autoStepEnabled;
+      const res = await fetch('/api/simulate/autostep', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newVal })
+      });
+      if (res.ok) {
+        useStore.getState().setAutoStepEnabled(newVal);
+      }
+    } catch (e) {
+      console.error('Failed to toggle autostep', e);
+    }
+  };
+
+  const manualStep = async () => {
+    try {
+      await fetch('/api/simulate/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step_seconds: 100.0 })
+      });
+    } catch (e) {
+      console.error('Failed to manually step', e);
+    }
+  };
 
   return (
     <div className="w-full h-full flex flex-col scanlines" style={{ background: '#060a14' }}>
@@ -378,6 +406,34 @@ export default function Dashboard() {
             )}
             {error && connected && (
               <span className="text-eol">API ERR</span>
+            )}
+            <button
+              onClick={toggleAutoStep}
+              className="metric-badge"
+              style={{
+                background: autoStepEnabled ? 'rgba(0, 255, 136, 0.06)' : 'rgba(255, 170, 0, 0.06)',
+                border: `1px solid ${autoStepEnabled ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 170, 0, 0.2)'}`,
+                color: autoStepEnabled ? '#00ff88' : '#ffaa00',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {autoStepEnabled ? 'Pause Auto-Step' : 'Start Auto-Step'}
+            </button>
+            {!autoStepEnabled && (
+              <button
+                onClick={manualStep}
+                className="metric-badge"
+                style={{
+                  background: 'rgba(6, 182, 212, 0.06)',
+                  border: '1px solid rgba(6, 182, 212, 0.2)',
+                  color: '#06b6d4',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                +100s Step
+              </button>
             )}
             <button
               onClick={() => setShowMissionReport(true)}
