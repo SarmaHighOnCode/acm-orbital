@@ -27,6 +27,32 @@ Wait for `AUTO_SEED | Complete — dashboard ready` in the terminal (~60 seconds
 
 The engine automatically seeds **50 satellites + 10,000 debris objects** and runs 5 simulation steps so the dashboard is fully populated on first load — no manual setup required.
 
+### Running Tests & API Injection
+
+While the engine runs autonomously, you can inject test vectors, schedule manual maneuvers, or run automated verification mid-simulation via the REST API:
+
+**Inject Custom Telemetry:**
+```bash
+curl -X POST http://localhost:8000/api/telemetry \
+  -H "Content-Type: application/json" \
+  -d '{"timestamp": "2026-03-01T12:00:00Z", "objects": [{"id": "TEST-01", "type": "DEBRIS", "r": {"x": 7000, "y": 0, "z": 0}, "v": {"x": 0, "y": 7.5, "z": 0}}]}'
+```
+
+**Schedule Evasion Burns:**
+```bash
+curl -X POST http://localhost:8000/api/maneuver/schedule \
+  -H "Content-Type: application/json" \
+  -d '{"satelliteId": "SAT-01", "maneuver_sequence": [{"burn_id": "TEST-BURN", "burnTime": "2026-03-01T12:30:00Z", "deltaV_vector": {"x": 0.005, "y": 0, "z": 0}}]}'
+```
+
+**Run the Automated Test Suite:**
+To run the 1,100+ physics engine tests directly on your machine:
+```bash
+cd backend
+pip install -r requirements.txt
+python -m pytest tests/ -v
+```
+
 ### Manual (Development)
 
 ```bash
@@ -228,6 +254,7 @@ Container health check.
 acm-orbital/
   Dockerfile                    # Single-container ubuntu:22.04 build
   docker-compose.yml            # Local dev convenience
+  TESTING.md                    # Detailed testing guide and strategies
   backend/
     main.py                     # FastAPI app + lifespan + auto-step loop
     config.py                   # 16 physical constants (single source of truth)
@@ -271,6 +298,8 @@ acm-orbital/
 ---
 
 ## Testing
+
+See the **[Testing Guide](TESTING.md)** for extensive details on test fixtures, stress profiles, precision benchmarks, and how to write new tests.
 
 **1,163 tests collected | all passing | 30 test files**
 
