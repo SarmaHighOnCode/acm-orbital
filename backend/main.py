@@ -82,7 +82,7 @@ def _auto_seed(eng: SimulationEngine) -> None:
         logger.info("AUTO_SEED | Skipped (ACM_AUTO_SEED=0)")
         return
 
-    from generate_telemetry import build_telemetry_payload, generate_satellite_batch
+    from generate_telemetry import build_telemetry_payload
 
     logger.info("AUTO_SEED | Generating 50 satellites + 10,000 debris (LEO mode)...")
     t0 = time.perf_counter()
@@ -222,7 +222,7 @@ async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
     if step_size <= 0:
         return
     logger.info("AUTO_STEP | Running %ds sim every %.0fs", step_size, step_interval)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     step_count = 0
     while True:
         await asyncio.sleep(step_interval)
@@ -251,10 +251,11 @@ async def lifespan(app: FastAPI):
     app.state.engine_lock = engine_lock
 
     # Auto-seed in a thread so we don't block the event loop
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _auto_seed, engine)
 
-    # Start background auto-stepping so the dashboard shows continuous motion
+    # Auto-step: disabled by default (README contract). Set ACM_AUTO_STEP=1 to enable.
+    engine.auto_step_enabled = os.environ.get("ACM_AUTO_STEP", "0") == "1"
     auto_step_task = asyncio.create_task(_auto_step_loop(engine, engine_lock))
 
     yield
@@ -297,7 +298,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
