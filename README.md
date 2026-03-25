@@ -10,7 +10,7 @@ J2-perturbed DOP853 orbital propagation | 4-stage KDTree conjunction assessment 
 [![Three.js](https://img.shields.io/badge/Three.js-WebGL-000000?logo=three.js&logoColor=white)](https://threejs.org)
 [![Docker](https://img.shields.io/badge/Docker-ubuntu:22.04-2496ED?logo=docker&logoColor=white)](https://docker.com)
 
-**[Technical Report (PDF)](docs/ACM_Technical_Report.pdf)** | **[Video Demo](#)** *(link TBD)*
+**[Technical Report (PDF)](docs/Technical%20Report.pdf)** | **[Video Demo](#)** *(link TBD)*
 
 ---
 
@@ -307,7 +307,7 @@ acm-orbital/
         coordinates.js          # ECI/geodetic transforms
   docs/
     technical_report.tex        # LaTeX source
-    ACM_Technical_Report.pdf    # Compiled 15-page report
+    Technical Report.pdf        # Compiled 15-page report
 ```
 
 ---
@@ -333,7 +333,7 @@ cd backend && python -m pytest tests/ -q
 | Parametric sweeps | 100+ | Coverage gap audits, breaking audit vectors, chaos invariants |
 | Unit tests | 850+ | Individual module validation across all engine components |
 
-12 critical physics bugs discovered during development, all fixed with dedicated regression tests. Full details in the [Technical Report](docs/ACM_Technical_Report.pdf).
+12 critical physics bugs discovered during development, all fixed with dedicated regression tests. Full details in the [Technical Report](docs/Technical%20Report.pdf).
 
 ---
 
@@ -370,7 +370,7 @@ cd backend && python -m pytest tests/ -q
 |---|---|---|
 | Source code (GitHub) | Complete | This repository |
 | Dockerfile (ubuntu:22.04) | Complete | `./Dockerfile` |
-| Technical Report (PDF) | Complete | [`docs/ACM_Technical_Report.pdf`](docs/ACM_Technical_Report.pdf) |
+| Technical Report (PDF) | Complete | [`docs/Technical Report.pdf`](docs/Technical%20Report.pdf) |
 | Video Demo (< 5 min) | Pending | *Link TBD* |
 
 ---
