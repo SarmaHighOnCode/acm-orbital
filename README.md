@@ -376,5 +376,3 @@ cd backend && python -m pytest tests/ -q
 ---
 
 Built at IIT Delhi for the National Space Hackathon 2026.
-
-**Team:** Prajnadeep Sarma · Jaideep · Contributors
