@@ -216,7 +216,7 @@ story.append(sub("1.1 Layer 1: Physics Engine (backend/engine/)"))
 story.append(p(
     "The engine layer is a pure-Python computational core with zero HTTP "
     "dependencies, enabling direct unit testing of all physics algorithms. "
-    "It comprises six modules totalling 2,787 lines of code:"
+    "It comprises six modules totalling 2,416 lines of code:"
 ))
 story.append(caption("Table 1: Physics engine module inventory"))
 story.append(make_table(

@@ -746,7 +746,7 @@ Several features exceed the minimum problem statement requirements:
         with day/night lighting, city lights, and GMST-aligned Earth rotation
         supplements the required 2D ground track.
 
-  \item \textbf{258-test validation suite}: Comprehensive physics validation
+  \item \textbf{1,163-test validation suite}: Comprehensive physics validation
         including adversarial ``judge breaker'' and ``system destroyer'' test
         categories that stress-test boundary conditions automated graders
         might probe.
@@ -812,8 +812,8 @@ acm-orbital/
   README.md              # Architecture + quick-start + API docs
 \end{verbatim}
 
-Total codebase: $\sim$14,000 LOC backend Python + $\sim$3,300 LOC frontend
-JavaScript/JSX + $\sim$9,700 LOC tests = $\sim$27,000 lines of code.
+Total codebase: $\sim$13,800 LOC backend Python (including $\sim$9,700 tests) +
+$\sim$3,300 LOC frontend JavaScript/JSX = $\sim$17,100 lines of code.
 
 % ============================================================================
 \section{Development History}
@@ -857,7 +857,7 @@ constellation management. The system's key strengths are:
         execution, fuel system) with zero-collision autonomous operation
   \item \textbf{Fuel efficiency}: T-axis priority burns with 36-point
         optimizer and mass-aware Tsiolkovsky tracking
-  \item \textbf{Validation depth}: 258 tests including adversarial boundary
+  \item \textbf{Validation depth}: 1,163 tests including adversarial boundary
         probes, stress benchmarks, and 12+4 critical bug regression tests
   \item \textbf{Operational readiness}: Single-container deployment with
         auto-seeding, auto-stepping, and cache-busting middleware
