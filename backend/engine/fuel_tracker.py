@@ -86,10 +86,10 @@ class FuelTracker:
             Propellant mass consumed (kg).
 
         Raises:
-            ValueError: If delta_v_ms exceeds MAX_DV_PER_BURN + 1.0 m/s,
+            ValueError: If delta_v_ms exceeds MAX_DV_PER_BURN × 1.05,
                         which is almost certainly a unit error (km/s passed as m/s).
         """
-        if delta_v_ms > MAX_DV_PER_BURN + 1.0:
+        if delta_v_ms > MAX_DV_PER_BURN * 1.05:  # 5% tolerance for FP accumulation
             logger.critical(
                 "FUEL | %s | delta_v_ms=%.4f exceeds max burn (%.1f m/s) — "
                 "rejecting burn execution.",
@@ -98,6 +98,11 @@ class FuelTracker:
             raise ValueError(f"Burn delta-v {delta_v_ms:.4f} m/s exceeds limit of {MAX_DV_PER_BURN} m/s")
 
         current_fuel: float = self._fuel.get(sat_id, 0.0)
+        if sat_id not in self._fuel:
+            logger.warning(
+                "FUEL | %s | consume() called for unregistered satellite — "
+                "burn executes with zero fuel cost", sat_id,
+            )
         fuel_consumed = self.estimate_fuel_consumption(sat_id, delta_v_ms)
 
         # Clamp to available propellant — cannot consume more than we have

@@ -778,8 +778,13 @@ class SimulationEngine:
         # Prevent unbounded growth from auto-planner over long sessions
         for sat in self.satellites.values():
             if len(sat.maneuver_queue) > 20:
+                dropped = len(sat.maneuver_queue) - 20
                 sat.maneuver_queue.sort(key=lambda x: x["burnTime"])
                 sat.maneuver_queue = sat.maneuver_queue[:20]
+                logger.warning(
+                    "QUEUE-CAP | %s | Dropped %d burn(s) exceeding 20-entry cap",
+                    sat.id, dropped,
+                )
 
         # ── Step 6: EOL threshold check ──
         for sat_id, sat in self.satellites.items():

@@ -74,6 +74,7 @@ class ManeuverResponse(BaseModel):
     """POST /api/maneuver/schedule — response body."""
     status: Literal["SCHEDULED", "REJECTED"]
     validation: ManeuverValidation
+    reason: str | None = None
 
 
 # ── Simulation Step ──────────────────────────────────────────────────────
