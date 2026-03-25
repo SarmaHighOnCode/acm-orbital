@@ -84,7 +84,7 @@ How our implementation maps to each scoring category:
 | Requirement | Implementation | Location |
 |---|---|---|
 | Collision detection | 4-stage filter: altitude band (kills 85% debris) &#8594; KDTree spatial index &#8594; Brent TCA refinement &#8594; CDM emission | `backend/engine/collision.py` |
-| Conjunction threshold | 100 m hard threshold with 200 m safety margin for early warning | `backend/config.py:CONJUNCTION_THRESHOLD_KM` |
+| Conjunction threshold | 100 m hard threshold (0.100 km); KDTree uses 200 km search radius for candidate filtering | `backend/config.py:CONJUNCTION_THRESHOLD_KM` |
 | Autonomous evasion | CRITICAL/RED CDMs trigger automatic evasion + recovery burn sequences | `backend/engine/simulation.py:_auto_plan_evasion()` |
 | Instantaneous scan | Separate KDTree scan at current positions catches inter-step collisions | `backend/engine/collision.py:check_collisions()` |
 | 24-hour lookahead | CDM prediction window spans full 24h via DOP853 dense output | `backend/engine/collision.py:assess()` |

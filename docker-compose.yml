@@ -1,6 +1,7 @@
 services:
   acm:
     build: .
+    user: "appuser"
     ports:
       - '8000:8000'
     environment:
@@ -8,7 +9,7 @@ services:
       - LOG_LEVEL=debug
       - ACM_AUTO_SEED=1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 10s
       timeout: 5s
       retries: 3
