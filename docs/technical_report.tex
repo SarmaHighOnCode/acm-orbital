@@ -89,7 +89,7 @@ concerns, testability, and single-container deployment.
 
 The engine layer is a pure-Python computational core with zero HTTP
 dependencies, enabling direct unit testing of all physics algorithms. It
-comprises six modules totalling 2,787 lines of code:
+comprises six modules totalling 2,416 lines of code:
 
 \begin{table}[H]
 \centering
@@ -98,12 +98,12 @@ comprises six modules totalling 2,787 lines of code:
 \toprule
 \textbf{Module} & \textbf{Responsibility} & \textbf{LOC} & \textbf{Complexity} \\
 \midrule
-\texttt{propagator.py}       & J2-perturbed DOP853 propagation    & 427 & $O(N)$ batch \\
-\texttt{collision.py}        & 4-stage KDTree conjunction pipeline & 415 & $O(S \log D)$ \\
-\texttt{maneuver\_planner.py} & RTN evasion + recovery burns       & 578 & $O(1)$ per burn \\
-\texttt{fuel\_tracker.py}    & Tsiolkovsky mass depletion         & 152 & $O(1)$ per burn \\
-\texttt{ground\_stations.py} & LOS elevation + ECEF/ECI transforms & 104 & $O(G)$ per query \\
-\texttt{simulation.py}       & Master orchestrator (7-stage tick)  & 1034 & $O(S \log D)$ \\
+\texttt{propagator.py}       & J2-perturbed DOP853 propagation    & 360 & $O(N)$ batch \\
+\texttt{collision.py}        & 4-stage KDTree conjunction pipeline & 357 & $O(S \log D)$ \\
+\texttt{maneuver\_planner.py} & RTN evasion + recovery burns       & 519 & $O(1)$ per burn \\
+\texttt{fuel\_tracker.py}    & Tsiolkovsky mass depletion         & 116 & $O(1)$ per burn \\
+\texttt{ground\_stations.py} & LOS elevation + ECEF/ECI transforms & 93 & $O(G)$ per query \\
+\texttt{simulation.py}       & Master orchestrator (7-stage tick)  & 971 & $O(S \log D)$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -794,7 +794,7 @@ acm-orbital/
     schemas.py           # Pydantic request/response models
     api/                 # 4 endpoint routers
       telemetry.py, simulate.py, maneuver.py, visualization.py
-    engine/              # Pure-Python physics core (2,787 LOC)
+    engine/              # Pure-Python physics core (2,416 LOC)
       propagator.py, collision.py, maneuver_planner.py,
       fuel_tracker.py, ground_stations.py, simulation.py, models.py
     data/
@@ -804,7 +804,7 @@ acm-orbital/
     src/
       App.jsx            # Root + polling setup
       store.js           # Zustand global state
-      components/        # 7 visualization modules (2,353 LOC)
+      components/        # 7 visualization modules (3,316 LOC)
       utils/             # API client, coordinate transforms
   Dockerfile             # Single-container ubuntu:22.04 build
   docker-compose.yml     # Local dev convenience
@@ -812,8 +812,8 @@ acm-orbital/
   README.md              # Architecture + quick-start + API docs
 \end{verbatim}
 
-Total codebase: $\sim$14,000 LOC backend Python + $\sim$2,700 LOC frontend
-JavaScript/JSX + $\sim$10,000 LOC tests = $\sim$26,700 lines of code.
+Total codebase: $\sim$14,000 LOC backend Python + $\sim$3,300 LOC frontend
+JavaScript/JSX + $\sim$9,700 LOC tests = $\sim$27,000 lines of code.
 
 % ============================================================================
 \section{Development History}

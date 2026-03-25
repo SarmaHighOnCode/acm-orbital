@@ -174,11 +174,11 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 
 | Layer | Technology | Lines of Code |
 |---|---|---|
-| Physics Engine | Python 3.11 + NumPy + SciPy | 2,787 |
-| API Layer | FastAPI + Pydantic + orjson | 450 |
-| Frontend | React 18 + Canvas + Three.js + Zustand | 2,655 |
-| Tests | pytest | 18,000 |
-| **Total** | | **~35,000** |
+| Physics Engine | Python 3.11 + NumPy + SciPy | 2,416 |
+| API Layer | FastAPI + Pydantic + orjson | 466 |
+| Frontend | React 18 + Canvas + Three.js + Zustand | 3,316 |
+| Tests | pytest | 9,743 |
+| **Total** | | **~17,100** |
 
 ---
 

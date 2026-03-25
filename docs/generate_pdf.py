@@ -176,7 +176,7 @@ story.append(Paragraph(
     "2D/3D operational dashboard. The system achieves 100,000-object ingestion in "
     "under 2 seconds, sub-millisecond conjunction queries, and zero-collision "
     "autonomous operation across extended simulation runs. A comprehensive test "
-    "suite of 252 test cases across 21 files validates every physics module, "
+    "suite of 1,163 test cases across 30 files validates every physics module, "
     "constraint boundary, and performance target.",
     styles["AbstractBody"]
 ))
@@ -222,12 +222,12 @@ story.append(caption("Table 1: Physics engine module inventory"))
 story.append(make_table(
     ["Module", "Responsibility", "LOC", "Complexity"],
     [
-        ["propagator.py",       "J2-perturbed DOP853 propagation",     "427",  "O(N) batch"],
-        ["collision.py",        "4-stage KDTree conjunction pipeline",  "415",  "O(S log D)"],
-        ["maneuver_planner.py", "RTN evasion + recovery burns",        "578",  "O(1) per burn"],
-        ["fuel_tracker.py",     "Tsiolkovsky mass depletion",          "152",  "O(1) per burn"],
-        ["ground_stations.py",  "LOS elevation + ECEF/ECI transforms", "104",  "O(G) per query"],
-        ["simulation.py",       "Master orchestrator (7-stage tick)",   "1034", "O(S log D)"],
+        ["propagator.py",       "J2-perturbed DOP853 propagation",     "360",  "O(N) batch"],
+        ["collision.py",        "4-stage KDTree conjunction pipeline",  "357",  "O(S log D)"],
+        ["maneuver_planner.py", "RTN evasion + recovery burns",        "519",  "O(1) per burn"],
+        ["fuel_tracker.py",     "Tsiolkovsky mass depletion",          "116",  "O(1) per burn"],
+        ["ground_stations.py",  "LOS elevation + ECEF/ECI transforms", "93",   "O(G) per query"],
+        ["simulation.py",       "Master orchestrator (7-stage tick)",   "971",  "O(S log D)"],
     ],
     col_widths=[3.8*cm, 5.8*cm, 1.2*cm, 2.8*cm]
 ))
@@ -585,8 +585,8 @@ story.append(sec("9. Testing & Validation"))
 
 story.append(sub("9.1 Test Suite Overview"))
 story.append(p(
-    "The project includes <b>252 test functions across 21 test files</b> comprising "
-    "7,802 lines of test code -- a test-to-source ratio of approximately 2.8:1 for "
+    "The project includes <b>1,163 test functions across 30 test files</b> comprising "
+    "9,743 lines of test code -- a test-to-source ratio of approximately 3:1 for "
     "the physics engine."
 ))
 story.append(caption("Table 7: Test suite inventory"))
@@ -743,15 +743,15 @@ tree_lines = [
     "    config.py                # Frozen physical constants (SSOT)",
     "    schemas.py               # Pydantic request/response models",
     "    api/                     # 4 endpoint routers",
-    "    engine/                  # Pure-Python physics (2,787 LOC)",
+    "    engine/                  # Pure-Python physics (2,416 LOC)",
     "      propagator.py, collision.py, maneuver_planner.py,",
     "      fuel_tracker.py, ground_stations.py, simulation.py",
     "    data/ground_stations.csv",
-    "    tests/                   # 21 files, 252 tests, 7,802 LOC",
+    "    tests/                   # 30 files, 1,163 tests, 9,743 LOC",
     "  frontend/",
     "    src/App.jsx              # Root + polling setup",
     "    src/store.js             # Zustand global state",
-    "    src/components/          # 7 viz modules (2,353 LOC)",
+    "    src/components/          # 7 viz modules (3,316 LOC)",
     "    src/utils/               # API client, coords, constants",
     "  Dockerfile                 # Single ubuntu:22.04 container",
     "  docker-compose.yml         # Local dev convenience",
@@ -763,8 +763,8 @@ for line in tree_lines:
 
 story.append(sp(8))
 story.append(p(
-    "Total codebase: ~14,000 LOC backend Python + ~2,700 LOC frontend "
-    "JavaScript/JSX + ~7,800 LOC tests = <b>~24,500 lines of code</b>."
+    "Total codebase: ~14,000 LOC backend Python + ~3,300 LOC frontend "
+    "JavaScript/JSX + ~9,700 LOC tests = <b>~17,100 lines of code</b>."
 ))
 
 # ════════════════════ 13. CONCLUSION ════════════════
