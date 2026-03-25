@@ -1098,4 +1098,5 @@ class SimulationEngine:
             "collision_count":     self.collision_count,
             "auto_step_enabled":   self.auto_step_enabled,
             "fleet_uptime_score":  fleet_uptime_score,
+            "total_delta_v_ms":    round(sum(m.get("delta_v_magnitude_ms", 0.0) for m in self.maneuver_log), 2),
         }

@@ -353,6 +353,14 @@ cd backend && python -m pytest tests/ -q
 
 ---
 
+## Limitations & Known Issues
+
+**Pass-through collisions** — The endpoint-only instantaneous collision scan can miss objects closing at >14 km/s that pass through each other between check intervals. The 24-hour lookahead CDM pipeline (DOP853 dense polynomial + Brent TCA refinement) catches the vast majority of these events in advance, but sub-second midstep transits may be invisible to the post-step scan. This is a fundamental trade-off between scan resolution and computational cost.
+
+**CW recovery accuracy** — Recovery burns use the Clohessy-Wiltshire linear relative motion model, which assumes near-circular orbits. For eccentricities above ~0.05 the linearization error grows and return-to-slot accuracy degrades. All LEO constellations targeted by this system operate well within this regime (e < 0.01).
+
+**Step-duration uptime charging** — The station-keeping uptime metric charges the full step duration as "time outside the box" if the satellite is beyond the 10 km threshold at the endpoint check, even if it was inside for most of the step. This is a conservative design choice that avoids rewarding satellites that briefly exit and re-enter their slot.
+
 ## Deployment
 
 - **Base image**: `ubuntu:22.04` (as required)

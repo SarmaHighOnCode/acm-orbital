@@ -5,7 +5,7 @@
 
 import React, { useRef, useMemo, useEffect, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars, Html } from '@react-three/drei';
+import { OrbitControls, Stars, Html, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import useStore from '../store';
 import { SCALE_FACTOR, STATUS_COLORS } from '../utils/constants';
@@ -71,130 +71,19 @@ function Earth() {
   const meshRef = useRef();
   const timestamp = useStore((s) => s.timestamp);
 
-  /* Day-side texture */
-  const dayTexture = useMemo(() => {
-    const W = 2048, H = 1024;
-    const canvas = document.createElement('canvas');
-    canvas.width = W; canvas.height = H;
-    const ctx = canvas.getContext('2d');
+  /* Load NASA Blue Marble textures from public/ */
+  const [dayMap, nightMap] = useTexture([
+    '/earth_day.jpg',
+    '/earth_night.jpg',
+  ]);
 
-    /* Ocean gradient — brighter blues for visible day side */
-    const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0,    '#0d3570');
-    grad.addColorStop(0.15, '#2060a8');
-    grad.addColorStop(0.5,  '#2878d0');
-    grad.addColorStop(0.85, '#2060a8');
-    grad.addColorStop(1,    '#0d3570');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    /* Lat/lon grid */
-    ctx.strokeStyle = 'rgba(80, 150, 230, 0.18)';
-    ctx.lineWidth = 0.7;
-    for (let lo = 0; lo <= 360; lo += 30) {
-      const x = (lo / 360) * W;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-    }
-    for (let la = 0; la <= 180; la += 30) {
-      const y = (la / 180) * H;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
-    /* Equator */
-    ctx.strokeStyle = 'rgba(100, 190, 255, 0.35)';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
-
-    const toC = (lo, la) => [((lo + 180) / 360) * W, ((90 - la) / 180) * H];
-    const drawLand = (coords, fill, stroke) => {
-      ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      coords.forEach(([lo, la], i) => {
-        const [x, y] = toC(lo, la);
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      });
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-    };
-
-    const F = 'rgba(55, 165, 75, 0.97)';
-    const S = 'rgba(100, 220, 120, 0.85)';
-
-    drawLand([[-168,71],[-140,70],[-100,74],[-82,70],[-65,47],[-55,47],[-60,44],
-              [-75,44],[-80,25],[-85,30],[-90,28],[-105,20],[-118,32],[-122,37],
-              [-124,49],[-130,55],[-140,60],[-150,62],[-165,65],[-168,71]], F, S);
-    drawLand([[-70,76],[-35,83],[-20,83],[-18,75],[-25,68],[-45,60],[-60,63],[-70,76]], F, S);
-    drawLand([[-80,12],[-65,12],[-50,2],[-35,-5],[-36,-13],[-40,-22],[-44,-23],
-              [-48,-27],[-52,-33],[-60,-38],[-65,-44],[-68,-55],[-72,-50],
-              [-70,-40],[-72,-30],[-72,-18],[-78,-2],[-80,0],[-80,12]], F, S);
-    drawLand([[-10,36],[0,38],[10,43],[20,46],[30,60],[28,70],[15,70],
-              [5,62],[-5,48],[-10,44],[-10,36]], F, S);
-    drawLand([[5,57],[10,62],[15,70],[28,71],[30,65],[25,58],[5,57]], F, S);
-    drawLand([[-18,15],[0,15],[10,37],[22,37],[38,12],[42,12],[50,12],[50,2],
-              [40,-10],[35,-20],[25,-35],[18,-35],[12,-25],[8,-5],[0,5],[-18,15]], F, S);
-    drawLand([[28,42],[40,42],[45,38],[55,22],[68,24],[75,18],[80,28],[85,28],
-              [92,28],[100,18],[105,10],[110,0],[115,5],[120,25],[125,35],[130,40],
-              [138,36],[140,42],[135,48],[130,48],[120,50],[110,54],[100,60],
-              [90,72],[75,72],[60,70],[40,68],[28,62],[28,42]], F, S);
-    drawLand([[114,-22],[122,-18],[135,-12],[138,-12],[142,-10],[148,-18],
-              [153,-27],[152,-38],[140,-38],[130,-33],[118,-28],[114,-26],[114,-22]], F, S);
-    drawLand([[130,31],[132,34],[134,35],[136,35],[138,38],[141,41],
-              [145,44],[143,44],[140,40],[138,36],[133,33],[130,31]], F, S);
-    drawLand([[166,-46],[168,-43],[170,-38],[172,-36],[174,-37],[172,-40],[168,-46],[166,-46]], F, S);
-
-    const IF = 'rgba(210, 230, 248, 0.55)';
-    const IS = 'rgba(190, 220, 245, 0.65)';
-    drawLand([[0,75],[60,78],[120,76],[180,74],[240,76],[300,78],[360,75]], IF, IS);
-    drawLand([[0,-70],[60,-72],[120,-74],[180,-76],[240,-74],[300,-72],[360,-70]], IF, IS);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    return tex;
-  }, []);
-
-  /* Night-side emissive texture */
-  const nightTexture = useMemo(() => {
-    const W = 2048, H = 1024;
-    const canvas = document.createElement('canvas');
-    canvas.width = W; canvas.height = H;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#010408';
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.strokeStyle = 'rgba(20, 50, 90, 0.15)';
-    ctx.lineWidth = 0.5;
-    for (let lo = 0; lo <= 360; lo += 30) {
-      const x = (lo / 360) * W;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-    }
-    for (let la = 0; la <= 180; la += 30) {
-      const y = (la / 180) * H;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
-
-    const toC = (lo, la) => [((lo + 180) / 360) * W, ((90 - la) / 180) * H];
-    const cities = [
-      [-74, 40, 1.0, 12],[-87, 41, 0.8, 10],[-118, 34, 0.9, 11],
-      [-43, -22, 0.7, 10],[-46, -23, 0.8, 10],[-3, 51, 0.9, 12],
-      [2, 48, 0.8, 10],[13, 52, 0.6, 8],[37, 55, 0.7, 9],
-      [31, 30, 0.6, 8],[77, 28, 0.9, 13],[72, 19, 0.8, 10],
-      [88, 22, 0.6, 8],[100, 13, 0.5, 7],[121, 31, 0.9, 12],
-      [116, 39, 0.9, 12],[139, 35, 1.0, 13],[126, 37, 0.7, 9],
-      [151, -33, 0.6, 8],[-99, 19, 0.7, 9],[55, 25, 0.5, 7],
-      [106, -6, 0.6, 8],[103, 1, 0.5, 7],
-    ];
-    for (const [lon, lat, intensity, spread] of cities) {
-      const [cx, cy] = toC(lon, lat);
-      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, spread);
-      grad.addColorStop(0, `rgba(255, 220, 140, ${intensity * 0.9})`);
-      grad.addColorStop(0.4, `rgba(255, 180, 80, ${intensity * 0.4})`);
-      grad.addColorStop(1, 'rgba(255, 160, 50, 0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(cx - spread, cy - spread, spread * 2, spread * 2);
-    }
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    return tex;
-  }, []);
+  /* Configure texture wrapping */
+  useMemo(() => {
+    [dayMap, nightMap].forEach((tex) => {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+    });
+  }, [dayMap, nightMap]);
 
   useFrame(() => {
     if (!meshRef.current) return;
@@ -205,7 +94,14 @@ function Earth() {
   return (
     <mesh ref={meshRef}>
       <sphereGeometry args={[R_EARTH, 128, 80]} />
-      <meshBasicMaterial map={nightTexture} />
+      <meshStandardMaterial
+        map={dayMap}
+        emissiveMap={nightMap}
+        emissive={new THREE.Color(1, 1, 1)}
+        emissiveIntensity={0.8}
+        roughness={0.9}
+        metalness={0.05}
+      />
     </mesh>
   );
 }

@@ -129,14 +129,20 @@ def _auto_seed(eng: SimulationEngine) -> None:
 
 
 def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[dict]:
-    """Create debris on near-collision courses with the first 20 satellites.
+    """Create debris on genuinely crossing orbits that naturally produce CDMs.
 
-    Three types of threats per satellite:
-    - YELLOW-band (1-4 km, co-orbital): persists in conjunction for many orbits
-      producing sustained YELLOW CDMs for the bullseye plot. These DON'T trigger
-      evasion (only CRITICAL/RED do) so they stay visible permanently.
-    - RED-band (0.2-0.8 km, slow approach): triggers evasion → delta-v chart data.
-    - Crossing (2-5 km, fast approach): triggers maneuvers on close pass.
+    Instead of co-orbital offsets that diverge under J2, we seed debris on
+    orbits at **different inclinations** that cross the satellite orbital
+    planes at their ascending/descending nodes. The physics engine's 4-stage
+    conjunction pipeline naturally detects these recurring close approaches.
+
+    Three threat classes per target satellite:
+    - YELLOW-band: same altitude, ±5° inclination offset → node-crossing
+      conjunctions every half-orbit, producing persistent YELLOW CDMs.
+    - RED-band: same altitude, ±15° inclination + 0.5–2 km radial offset →
+      close approaches that trigger evasion burns.
+    - Fast-crossing: ±25–30° inclination → high relative velocity encounters
+      that test the conjunction assessment pipeline.
     """
     rng = np.random.default_rng(99)
     threats = []
@@ -145,17 +151,28 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[
     for sat in targets:
         r_sat = np.array([sat["r"]["x"], sat["r"]["y"], sat["r"]["z"]])
         v_sat = np.array([sat["v"]["x"], sat["v"]["y"], sat["v"]["z"]])
+        r_mag = np.linalg.norm(r_sat)
+        v_mag = np.linalg.norm(v_sat)
 
-        # Type 1: YELLOW-band co-orbital debris (1-4 km offset, same velocity)
-        # These generate YELLOW CDMs that PERSIST because evasion only fires
-        # on CRITICAL/RED, and YELLOW (1-5 km) is below the evasion threshold.
+        # Orbital frame: h = r × v (angular momentum), then build R/T/N
+        h = np.cross(r_sat, v_sat)
+        h_hat = h / np.linalg.norm(h)  # Normal to orbital plane
+        r_hat = r_sat / r_mag
+        t_hat = np.cross(h_hat, r_hat)  # Transverse (approx velocity dir)
+
+        # Type 1: YELLOW-band — small inclination change (±5°)
+        # Debris at same altitude but rotated orbital plane → node crossing
         for j in range(2):
-            offset_dir = rng.normal(0, 1, 3)
-            offset_dir /= np.linalg.norm(offset_dir)
-            offset_km = rng.uniform(1.5, 3.5)  # 1.5-3.5 km → YELLOW CDMs
-            r_deb = r_sat + offset_dir * offset_km
-            # Nearly co-orbital: tiny velocity perturbation
-            v_deb = v_sat.copy() + rng.normal(0, 0.00003, 3)
+            inc_offset = rng.uniform(3.0, 7.0) * (1 if j == 0 else -1)
+            inc_rad = np.radians(inc_offset)
+            # Rotate velocity vector around radial axis by inc_offset degrees
+            cos_i, sin_i = np.cos(inc_rad), np.sin(inc_rad)
+            v_deb = v_mag * (cos_i * t_hat + sin_i * h_hat)
+            # Small position offset along track (±50–200 km) for phase diversity
+            along_track_km = rng.uniform(50, 200) * (1 if j == 0 else -1)
+            r_deb = r_sat + t_hat * along_track_km
+            # Re-normalize to same altitude
+            r_deb = r_deb / np.linalg.norm(r_deb) * r_mag
 
             threats.append({
                 "id": f"THREAT-{sat['id']}-{j:02d}",
@@ -164,14 +181,13 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[
                 "v": {"x": float(v_deb[0]), "y": float(v_deb[1]), "z": float(v_deb[2])},
             })
 
-        # Type 2: RED-band approach debris (triggers evasion → delta-v data)
-        cross_dir = rng.normal(0, 1, 3)
-        cross_dir /= np.linalg.norm(cross_dir)
-        offset_km2 = rng.uniform(2.0, 5.0)
-        r_deb2 = r_sat + cross_dir * offset_km2
-        closing_speed = rng.uniform(0.001, 0.003)
-        v_deb2 = v_sat - cross_dir * closing_speed
-        v_deb2 += rng.normal(0, 0.0003, 3)
+        # Type 2: RED-band — larger inclination (±12–18°) + small radial offset
+        inc_offset = rng.uniform(12, 18) * rng.choice([-1, 1])
+        inc_rad = np.radians(inc_offset)
+        cos_i, sin_i = np.cos(inc_rad), np.sin(inc_rad)
+        v_deb2 = v_mag * (cos_i * t_hat + sin_i * h_hat)
+        radial_offset = rng.uniform(0.5, 2.0)  # 0.5–2 km → RED CDMs
+        r_deb2 = r_sat + r_hat * radial_offset
 
         threats.append({
             "id": f"THREAT-{sat['id']}-02",
@@ -184,34 +200,6 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────────
-
-def _reinject_threats(eng: SimulationEngine) -> None:
-    """Re-position co-orbital YELLOW-band threats near current satellite positions.
-
-    Called every step to ensure the bullseye plot always has CDMs to display.
-    Directly updates debris positions (no full ingest/assessment — cheap O(S)).
-    The next step()'s 4-stage assessment will pick them up.
-    """
-    rng = np.random.default_rng()
-    sats = list(eng.satellites.values())
-    targets = sats[:min(20, len(sats))]
-    count = 0
-
-    for sat in targets:
-        r_sat = sat.position
-        v_sat = sat.velocity
-        for j in range(2):
-            deb_id = f"THREAT-{sat.id}-{j:02d}"
-            offset_dir = rng.normal(0, 1, 3)
-            offset_dir /= np.linalg.norm(offset_dir)
-            offset_km = rng.uniform(1.0, 3.0)
-
-            if deb_id in eng.debris:
-                eng.debris[deb_id].position = r_sat + offset_dir * offset_km
-                eng.debris[deb_id].velocity = v_sat.copy()
-                count += 1
-
-    logger.debug("AUTO_STEP | Repositioned %d threat debris", count)
 
 
 async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
@@ -231,10 +219,6 @@ async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
                 if getattr(eng, "auto_step_enabled", True):
                     await loop.run_in_executor(None, eng.step, step_size)
                     step_count += 1
-                    # Re-inject threats every step so CDMs persist across the
-                    # J2-perturbed propagation (co-orbital debris diverges within
-                    # a single 100s step due to differential RAAN precession)
-                    await loop.run_in_executor(None, _reinject_threats, eng)
         except asyncio.CancelledError:
             break
         except Exception as exc:
