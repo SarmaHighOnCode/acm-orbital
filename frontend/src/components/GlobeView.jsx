@@ -59,10 +59,12 @@ function geoToCartesian(lat, lon, altKm) {
   const r = (R_EARTH_KM + altKm) * SCALE_FACTOR;
   const latRad = lat * DEG2RAD;
   const lonRad = lon * DEG2RAD;
+  // Three.js SphereGeometry maps lon=90°E to -Z (z = R*sin(phi) where phi=(lon+180°)),
+  // so geographic z must be negated to match sphere UV orientation.
   return new THREE.Vector3(
     r * Math.cos(latRad) * Math.cos(lonRad),
     r * Math.sin(latRad),
-    r * Math.cos(latRad) * Math.sin(lonRad)
+    -r * Math.cos(latRad) * Math.sin(lonRad)
   );
 }
 
@@ -403,7 +405,7 @@ function SatelliteLabels() {
   const satCdms = cdms.filter((c) => c.satellite_id === selected.id);
 
   return (
-    <Html position={[pos.x, pos.y + 0.35, pos.z]} center style={{ pointerEvents: 'none' }}>
+    <Html occlude position={[pos.x, pos.y + 0.35, pos.z]} center style={{ pointerEvents: 'none' }}>
       <div style={{
         color,
         fontSize: '10px',
@@ -615,7 +617,7 @@ function GroundStationMarker({ gs }) {
         <ringGeometry args={[0.08, 0.115, 22]} />
         <meshBasicMaterial color="#fbbf24" transparent opacity={0.50} side={THREE.DoubleSide} />
       </mesh>
-      <Html position={[0, 0.38, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html occlude position={[0, 0.38, 0]} center style={{ pointerEvents: 'none' }}>
         <div style={{
           color: '#fde68a',
           fontSize: '9px',
