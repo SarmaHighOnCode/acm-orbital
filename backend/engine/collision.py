@@ -266,7 +266,28 @@ class ConjunctionAssessor:
                     rel_vel = float(np.linalg.norm(s_tca[3:] - d_tca[3:]))
 
                     rel_v = d_tca[3:] - s_tca[3:]
-                    approach_angle = float(np.arctan2(rel_v[1], rel_v[0]))
+                    
+                      # Calculate relative approach angle in RTN frame
+                      # 1. Get position and velocity of satellite at TCA
+                    r_sat = s_tca[:3]
+                    v_sat = s_tca[3:]
+                      
+                      # 2. Construct RTN rotation matrix
+                    r_hat = r_sat / np.linalg.norm(r_sat)
+                    h_vec = np.cross(r_sat, v_sat)
+                    n_hat = h_vec / np.linalg.norm(h_vec)
+                    t_hat = np.cross(n_hat, r_hat)
+                      
+                      # 3. Project relative velocity into RTN
+                    rel_v_rtn = np.array([
+                        np.dot(rel_v, r_hat),  # Radial
+                        np.dot(rel_v, t_hat),  # Transverse
+                        np.dot(rel_v, n_hat)   # Normal
+                    ])
+                      
+                      # 4. Angle in Transverse-Normal plane (per spec)
+                    approach_angle = float(np.arctan2(rel_v_rtn[2], rel_v_rtn[1]))
+
                     warnings.append(CDM(
                         satellite_id=sat_id, debris_id=deb_id,
                         tca=base_time + timedelta(seconds=tca_s),
@@ -381,7 +402,28 @@ class ConjunctionAssessor:
                     rel_vel = float(np.linalg.norm(s1_tca[3:] - s2_tca[3:]))
 
                     rel_v = s2_tca[3:] - s1_tca[3:]
-                    approach_angle = float(np.arctan2(rel_v[1], rel_v[0]))
+                    
+                      # Calculate relative approach angle in RTN frame
+                      # 1. Get position and velocity of satellite at TCA
+                    r_sat = s1_tca[:3]
+                    v_sat = s1_tca[3:]
+                      
+                      # 2. Construct RTN rotation matrix
+                    r_hat = r_sat / np.linalg.norm(r_sat)
+                    h_vec = np.cross(r_sat, v_sat)
+                    n_hat = h_vec / np.linalg.norm(h_vec)
+                    t_hat = np.cross(n_hat, r_hat)
+                      
+                      # 3. Project relative velocity into RTN
+                    rel_v_rtn = np.array([
+                        np.dot(rel_v, r_hat),  # Radial
+                        np.dot(rel_v, t_hat),  # Transverse
+                        np.dot(rel_v, n_hat)   # Normal
+                    ])
+                      
+                      # 4. Angle in Transverse-Normal plane (per spec)
+                    approach_angle = float(np.arctan2(rel_v_rtn[2], rel_v_rtn[1]))
+
                     warnings.append(CDM(
                         satellite_id=s1_id, debris_id=s2_id,
                         tca=base_time + timedelta(seconds=tca_s),
