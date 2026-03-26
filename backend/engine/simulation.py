@@ -480,7 +480,10 @@ class SimulationEngine:
         # Track satellite positions at each collision-scan sample time.
         saved_sat_pos: dict[float, dict[str, np.ndarray]] = {}
 
+        import time
+
         for seg_idx in range(len(seg_bounds) - 1):
+            time.sleep(0.001)  # Yield GIL to allow asyncio event loop (e.g. /health) to respond
             seg_start = seg_bounds[seg_idx]
             seg_end   = seg_bounds[seg_idx + 1]
             seg_dt    = seg_end - seg_start

@@ -21,7 +21,7 @@ import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.telemetry import router as telemetry_router
@@ -310,6 +310,17 @@ async def health_check():
 # Mount AFTER routers so API routes take precedence.
 # In production (Docker), the React build output lives in ./static/
 # Skipped if ACM_NO_STATIC=1 (dev mode with Vite proxy).
-static_dir = Path(__file__).parent / "static"
+static_dir = (Path(__file__).parent / "static").resolve()
 if static_dir.exists() and os.environ.get("ACM_NO_STATIC", "0") != "1":
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
+    # SPA client-side routing fallback
+    @app.get("/{full_path:path}")
+    async def serve_spa_or_static(full_path: str):
+        target_path = static_dir / full_path
+        # Prevent path traversal
+        if not str(target_path.resolve()).startswith(str(static_dir)):
+            return FileResponse(static_dir / "index.html")
+            
+        if target_path.is_file():
+            return FileResponse(target_path)
+            
+        return FileResponse(static_dir / "index.html")

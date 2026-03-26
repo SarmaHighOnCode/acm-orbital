@@ -28,8 +28,9 @@ async def simulate_step(
 ):
     """Advance simulation by step_seconds. Propagate, execute burns, detect collisions."""
     engine = _get_engine(request)
+    loop = asyncio.get_running_loop()
     async with request.app.state.engine_lock:
-        result = engine.step(step_seconds=int(payload.step_seconds))
+        result = await loop.run_in_executor(None, engine.step, int(payload.step_seconds))
     logger.info(
         "SIMULATE | Step %.1fs | Collisions: %d | Maneuvers: %d",
         payload.step_seconds,

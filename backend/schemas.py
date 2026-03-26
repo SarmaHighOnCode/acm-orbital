@@ -11,18 +11,19 @@ All field names match the problem statement PDF verbatim.
 from __future__ import annotations
 
 from datetime import datetime
+import math
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Shared Primitives ────────────────────────────────────────────────────
 
 class Vector3D(BaseModel):
     """3D vector in ECI J2000 frame."""
-    x: float
-    y: float
-    z: float
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+    z: float = Field(allow_inf_nan=False)
 
 
 # ── Telemetry ────────────────────────────────────────────────────────────
@@ -33,6 +34,20 @@ class TelemetryObject(BaseModel):
     type: Literal["SATELLITE", "DEBRIS"]
     r: Vector3D                        # Position in km (ECI)
     v: Vector3D                        # Velocity in km/s (ECI)
+
+    @model_validator(mode="after")
+    def check_physics_bounds(self) -> "TelemetryObject":
+        r_mag = math.sqrt(self.r.x**2 + self.r.y**2 + self.r.z**2)
+        v_mag = math.sqrt(self.v.x**2 + self.v.y**2 + self.v.z**2)
+        
+        # Earth's radius is ~6371 km. Accept down to 6000 km, up to 100,000 km
+        if r_mag < 6000.0 or r_mag > 100000.0:
+            raise ValueError(f"Position magnitude {r_mag:.1f} km out of valid bounds.")
+            
+        if v_mag > 20.0:
+            raise ValueError(f"Velocity magnitude {v_mag:.1f} km/s out of valid bounds.")
+            
+        return self
 
 
 class TelemetryRequest(BaseModel):

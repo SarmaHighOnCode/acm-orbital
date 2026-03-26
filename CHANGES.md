@@ -39,3 +39,10 @@ All contributors (Human or AI) must append a summary of their work here after ev
   2. Fast analytical debris propagation: Added `propagate_fast_batch()` using linear Keplerian extrapolation (r + v·dt + ½a·dt²) for large debris clouds on short steps — ~100× faster than DOP853 integration.
   3. Fast path in ConjunctionAssessor: For short lookaheads with >500 candidate pairs, skip expensive dense propagation and TCA refinement; use linear extrapolation for initial screening.
 - 2026-03-13 | [Physics] | Dev 1 (AI) | Optimized TCA refinement: Short lookaheads (≤900s) use single minimize_scalar call instead of multi-start subdivision, eliminating unnecessary iterations for scenarios with at most one close approach.
+
+
+## 2026-03-26
+- 2026-03-26 | [Infra] | Strawhats | Merged PR #5: Fixed SPA client-side routing on frontend refresh by dynamically serving index.html on unhandled routes.
+- 2026-03-26 | [API] | Strawhats | Added comprehensive physics-bounds validators (NaN/Inf checks, magnitude bounds) to Pydantic TelemetryObject schemas.
+- 2026-03-26 | [Physics] | Strawhats | Yielded GIL mid-propagation segment loops in engine.step() to prevent blocking Uvicorn/asyncio health endpoint timeouts.
+- 2026-03-26 | [Docs] | Strawhats | Removed residual un-ignored AI workflow artifacts and updated LICENSE copyright to Strawhats team name.
