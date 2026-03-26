@@ -28,6 +28,9 @@ const MAX_TCA_S = 3600; // 1 hour
  * Now dynamically mapped from backend true velocity vector data if available.
  */
 function approachAngle(cdm) {
+  if (cdm.rel_rtn_n !== undefined && cdm.rel_rtn_t !== undefined) {
+      return Math.atan2(cdm.rel_rtn_n, cdm.rel_rtn_t);
+  }
   if (cdm.approach_angle_rad !== undefined && cdm.approach_angle_rad !== null) {
       return cdm.approach_angle_rad;
   }
