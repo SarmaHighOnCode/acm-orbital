@@ -154,7 +154,7 @@ function CloudLayer() {
   });
 
   return (
-    <mesh ref={meshRef}>
+    <mesh ref={meshRef} raycast={() => null}>
       <sphereGeometry args={[R_EARTH * 1.005, 96, 64]} />
       <meshStandardMaterial
         map={cloudTexture}
@@ -187,15 +187,15 @@ function Sunlight() {
 function Atmosphere() {
   return (
     <>
-      <mesh>
+      <mesh raycast={() => null}>
         <sphereGeometry args={[R_EARTH * 1.008, 80, 64]} />
         <meshBasicMaterial color="#4488ff" transparent opacity={0.06} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      <mesh>
+      <mesh raycast={() => null}>
         <sphereGeometry args={[R_EARTH * 1.025, 80, 64]} />
         <meshBasicMaterial color="#2266ee" transparent opacity={0.05} side={THREE.BackSide} depthWrite={false} />
       </mesh>
-      <mesh>
+      <mesh raycast={() => null}>
         <sphereGeometry args={[R_EARTH * 1.06, 64, 64]} />
         <meshBasicMaterial color="#0044cc" transparent opacity={0.03} side={THREE.BackSide} depthWrite={false} />
       </mesh>
@@ -405,7 +405,7 @@ function SatelliteLabels() {
   const satCdms = cdms.filter((c) => c.satellite_id === selected.id);
 
   return (
-    <Html occlude position={[pos.x, pos.y + 0.35, pos.z]} center style={{ pointerEvents: 'none' }}>
+      <Html occlude="blending" position={[pos.x, pos.y + 0.35, pos.z]} center style={{ pointerEvents: 'none' }}>
       <div style={{
         color,
         fontSize: '10px',
@@ -617,7 +617,7 @@ function GroundStationMarker({ gs }) {
         <ringGeometry args={[0.08, 0.115, 22]} />
         <meshBasicMaterial color="#fbbf24" transparent opacity={0.50} side={THREE.DoubleSide} />
       </mesh>
-      <Html occlude position={[0, 0.38, 0]} center style={{ pointerEvents: 'none' }}>
+        <Html occlude="blending" position={[0, 0.38, 0]} center style={{ pointerEvents: 'none' }}>
         <div style={{
           color: '#fde68a',
           fontSize: '9px',
