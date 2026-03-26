@@ -160,17 +160,18 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[
         r_hat = r_sat / r_mag
         t_hat = np.cross(h_hat, r_hat)  # Transverse (approx velocity dir)
 
-        # Type 1: YELLOW-band / CRITICAL-band — small inclination change
-        # Debris placed very closely to force immediate detection on startup
+        # Type 1: YELLOW-band — small inclination change (±5°)
+        # Debris at same altitude but rotated orbital plane → node crossing
         for j in range(2):
-            inc_offset = rng.uniform(0.1, 0.5) * (1 if j == 0 else -1)
+            inc_offset = rng.uniform(3.0, 7.0) * (1 if j == 0 else -1)
             inc_rad = np.radians(inc_offset)
             cos_i, sin_i = np.cos(inc_rad), np.sin(inc_rad)
             v_deb = v_mag * (cos_i * t_hat + sin_i * h_hat)
-            # Small position offset immediately alongside the satellite
-            along_track_km = rng.uniform(0.5, 2.0) * (1 if j == 0 else -1)
+            # Small position offset along track (±50–200 km) for phase diversity
+            along_track_km = rng.uniform(50, 200) * (1 if j == 0 else -1)
             r_deb = r_sat + t_hat * along_track_km
-            r_deb = r_deb / np.linalg.norm(r_deb) * (r_mag + rng.uniform(-0.05, 0.05))
+            # Re-normalize to same altitude
+            r_deb = r_deb / np.linalg.norm(r_deb) * r_mag
 
             threats.append({
                 "id": f"THREAT-{sat['id']}-{j:02d}",
@@ -179,13 +180,13 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[
                 "v": {"x": float(v_deb[0]), "y": float(v_deb[1]), "z": float(v_deb[2])},
             })
 
-        # Type 2: RED-band — extremely close trajectory intersection
-        inc_offset = rng.uniform(1.0, 3.0) * rng.choice([-1, 1])
+        # Type 2: RED-band — larger inclination (±12–18°) + small radial offset
+        inc_offset = rng.uniform(12, 18) * rng.choice([-1, 1])
         inc_rad = np.radians(inc_offset)
         cos_i, sin_i = np.cos(inc_rad), np.sin(inc_rad)
         v_deb2 = v_mag * (cos_i * t_hat + sin_i * h_hat)
-        radial_offset = rng.uniform(0.01, 0.5)  # Under 1km -> RED or CRITICAL CDM
-        r_deb2 = r_sat + r_hat * radial_offset + t_hat * rng.uniform(-1.0, 1.0)
+        radial_offset = rng.uniform(0.5, 2.0)  # 0.5–2 km → RED CDMs
+        r_deb2 = r_sat + r_hat * radial_offset
 
         threats.append({
             "id": f"THREAT-{sat['id']}-02",
