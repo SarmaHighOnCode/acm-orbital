@@ -15,7 +15,7 @@
  *   - Click-to-select satellite
  */
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import useStore from '../store';
 import { geoToMercator } from '../utils/coordinates';
 
@@ -161,10 +161,21 @@ function predictTrack(history) {
 
 export default function GroundTrack() {
   const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const { satellites, debrisCloud, timestamp, cdms } = useStore();
   const satHistory = useStore((s) => s.satHistory);
   const selectedSatellite = useStore((s) => s.selectedSatellite);
   const setSelectedSatellite = useStore((s) => s.setSelectedSatellite);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      setImgLoaded(true);
+    };
+    img.src = '/earth_day.jpg';
+  }, []);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -182,10 +193,18 @@ export default function GroundTrack() {
     ctx.fillStyle = '#070d1a';
     ctx.fillRect(0, 0, w, h);
 
+    // NASA Blue Marble texture background
+    if (imgRef.current) {
+      ctx.drawImage(imgRef.current, 0, 0, w, h);
+      // Darken overlay to maintain readability of overlaid data
+      ctx.fillStyle = 'rgba(0, 5, 15, 0.4)';
+      ctx.fillRect(0, 0, w, h);
+    }
+
     // ── Continental outlines ──
-    ctx.strokeStyle = '#162040';
+    ctx.strokeStyle = 'rgba(100, 160, 255, 0.2)';
     ctx.lineWidth = 1;
-    ctx.fillStyle = '#0e1a2e';
+    ctx.fillStyle = 'rgba(14, 26, 46, 0.12)';
     for (const coast of CONTINENTS) {
       ctx.beginPath();
       for (let i = 0; i < coast.length; i++) {
@@ -216,11 +235,25 @@ export default function GroundTrack() {
       ctx.stroke();
     }
 
+    // ── Equator & Prime Meridian emphasis ──
+    ctx.strokeStyle = '#1a2a40';
+    ctx.lineWidth = 1;
+    const eqY = geoToMercator(0, 0, w, h).y;
+    ctx.beginPath();
+    ctx.moveTo(0, eqY);
+    ctx.lineTo(w, eqY);
+    ctx.stroke();
+    const pmX = geoToMercator(0, 0, w, h).x;
+    ctx.beginPath();
+    ctx.moveTo(pmX, 0);
+    ctx.lineTo(pmX, h);
+    ctx.stroke();
+
     // ── Terminator (day/night boundary) ──
     drawTerminator(ctx, w, h, timestamp);
 
     // ── Grid labels ──
-    ctx.fillStyle = '#2a3a52';
+    ctx.fillStyle = '#3a5a7a';
     ctx.font = '9px Inter, monospace';
     ctx.textAlign = 'center';
     for (let lon = -180; lon <= 180; lon += 60) {
@@ -450,7 +483,7 @@ export default function GroundTrack() {
       ctx.fillStyle = '#6b7280';
       ctx.fillText(`${selSat.fuel_kg.toFixed(1)}kg`, bx + bw - 40, by + 45);
     }
-  }, [satellites, debrisCloud, timestamp, satHistory, cdms, selectedSatellite]);
+  }, [satellites, debrisCloud, timestamp, satHistory, cdms, selectedSatellite, imgLoaded]);
 
   useEffect(() => {
     draw();
