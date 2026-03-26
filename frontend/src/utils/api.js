@@ -68,7 +68,20 @@ export async function fetchSnapshot() {
  * @returns {() => void} Stop function
  */
 export function startPolling(intervalMs = 2000) {
-  fetchSnapshot(); // Initial fetch
-  const id = setInterval(fetchSnapshot, intervalMs);
-  return () => clearInterval(id);
+  let isStopped = false;
+  let timeoutId = null;
+
+  async function poll() {
+    if (isStopped) return;
+    await fetchSnapshot();
+    if (!isStopped) {
+      timeoutId = setTimeout(poll, intervalMs);
+    }
+  }
+
+  poll(); // Initial fetch
+  return () => {
+    isStopped = true;
+    if (timeoutId) clearTimeout(timeoutId);
+  };
 }

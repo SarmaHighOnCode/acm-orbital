@@ -129,7 +129,7 @@ All six required visualization modules in real-time:
 |---|---|---|---|
 | Ground Track Map | Mercator 2D projection (default view) | Canvas equirectangular with satellite markers, 90-min trails, predicted trajectories, terminator line, debris cloud, 6 ground stations, continental outlines | `frontend/src/components/GroundTrack.jsx` |
 | 3D Globe | Optional enhancement | Three.js WebGL globe with day/night lighting, GMST rotation, city lights, sun-position tracking | `frontend/src/components/GlobeView.jsx` |
-| Bullseye Plot | Polar conjunction chart | Canvas polar chart: radial = TCA, color = risk level (GREEN/YELLOW/RED/CRITICAL), pulsing animation | `frontend/src/components/BullseyePlot.jsx` |
+| Bullseye Plot | Polar conjunction chart | Canvas polar chart: radial = TCA, angle = Relative Approach Vector, color = risk level, pulsing | `frontend/src/components/BullseyePlot.jsx` |
 | Fuel Heatmap | Per-satellite fuel gauges | Sorted bar gauges with gradient coloring, fleet status counters, click-to-select | `frontend/src/components/FuelHeatmap.jsx` |
 | Delta-V Chart | Fuel consumed vs collisions avoided | XY area chart with gradient fill, cumulative tracking | `frontend/src/components/DeltaVChart.jsx` |
 | Maneuver Timeline | Gantt-style burn schedule | Per-satellite rows with burn blocks, 600s cooldown periods, blackout zone flagging, CDM markers, cooldown violations | `frontend/src/components/ManeuverTimeline.jsx` |
