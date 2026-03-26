@@ -312,6 +312,12 @@ async def health_check():
 # Skipped if ACM_NO_STATIC=1 (dev mode with Vite proxy).
 static_dir = (Path(__file__).parent / "static").resolve()
 if static_dir.exists() and os.environ.get("ACM_NO_STATIC", "0") != "1":
+    
+    # Mount assets properly for caching
+    assets_dir = static_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
     # SPA client-side routing fallback
     @app.get("/{full_path:path}")
     async def serve_spa_or_static(full_path: str):
