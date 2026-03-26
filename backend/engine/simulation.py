@@ -157,6 +157,20 @@ class SimulationEngine:
 
         logger.info("SimulationEngine initialized at %s", self.sim_time.isoformat())
 
+    def reset(self) -> None:
+        """Reset the simulation engine to a clean state."""
+        self.sim_time = datetime.now(timezone.utc)
+        self._time_set_by_telemetry = False
+        self.satellites.clear()
+        self.debris.clear()
+        self.active_cdms.clear()
+        self.collision_log.clear()
+        self.maneuver_log.clear()
+        self.collision_count = 0
+        self.time_outside_box.clear()
+        self._last_ca_scan_time = None
+        logger.info("SimulationEngine state reset.")
+
     # ── THE CONTRACT (API Layer calls these) ──────────────────────────────────
 
     def ingest_telemetry(self, timestamp: str, objects: list) -> dict:
@@ -463,7 +477,7 @@ class SimulationEngine:
         _deb_dense_sol = None
         if _deb_ids:
             deb_states_init = {did: deb.state_vector for did, deb in self.debris.items()}
-            if step_seconds <= 600 and len(_deb_ids) > 100:
+            if step_seconds <= 60 and len(_deb_ids) > 100:
                 new_deb_final = OrbitalPropagator.propagate_fast_batch(
                     deb_states_init, step_seconds
                 )

@@ -2,7 +2,7 @@
 
 **Real-time collision avoidance for 50 satellites navigating 10,000+ debris objects in Low Earth Orbit.**
 
-J2-perturbed DOP853 orbital propagation | 4-stage KDTree conjunction assessment | RTN-frame evasion planning | Tsiolkovsky fuel tracking | 60 FPS operational dashboard
+J2-perturbed DOP853 orbital propagation | 4-stage KDTree conjunction assessment | RTN-frame evasion planning | Tsiolkovsky fuel tracking | Real-Time operational dashboard
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -123,7 +123,7 @@ How our implementation maps to each scoring category:
 
 ### UI/UX — 15%
 
-All six required visualization modules at 60 FPS:
+All six required visualization modules in real-time:
 
 | Module | Spec Requirement | Implementation | Location |
 |---|---|---|---|
@@ -384,3 +384,8 @@ cd backend && python -m pytest tests/ -q
 ---
 
 Built at IIT Delhi for the National Space Hackathon 2026.
+
+## Known Limitations (Hackathon Context)
+- **Physics Propagation:** The propagator is currently limited to J2 perturbations. Atmospheric drag, solar radiation pressure, and third-body effects are omitted. This may result in slightly optimistic lifetime and collision assessments for low-Earth orbit objects (<500km).
+- **Worker Concurrency:** The engine shares state in-memory on a single API worker. Heavy simulation steps are pushed to an asyncio executor thread (with periodic GIL yielding) rather than a separate asynchronous worker queue.
+- **REST vs WebSockets:** The high-frequency dashboard relies on HTTP polling. An optimization to pure Server-Sent Events (SSE) or WebSockets is recommended for scaling visualization bandwidth.

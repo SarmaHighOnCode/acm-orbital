@@ -7,6 +7,7 @@ Owner: Dev 2 (API Layer)
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Request
@@ -19,6 +20,17 @@ router = APIRouter(tags=["simulate"])
 
 def _get_engine(request: Request):
     return request.app.state.engine
+
+
+@router.post("/reset")
+@router.post("/simulate/reset")
+async def simulate_reset(request: Request):
+    """Reset the simulation engine state cleanly."""
+    engine = _get_engine(request)
+    async with request.app.state.engine_lock:
+        engine.reset()
+    logger.info("SIMULATE | Engine reset requested via API.")
+    return {"status": "SUCCESS", "message": "Simulation reset completely."}
 
 
 @router.post("/simulate/step", response_model=SimulateStepResponse)
