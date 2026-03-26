@@ -172,7 +172,7 @@ class TestStage2FilterFalseNegative:
         # ── Verdict ───────────────────────────────────────────────────────────
         if tca_dist < CONJUNCTION_THRESHOLD_KM and len(cdms) == 0:
             # REAL COLLISION MISSED — this is the confirmed false-negative
-            pytest.xfail(
+            pytest.fail(
                 f"CONFIRMED LIMITATION [collision.py:125]: "
                 f"TCA distance {tca_dist:.4f} km < {CONJUNCTION_THRESHOLD_KM} km "
                 f"but Stage-2 filter (initial_sep={initial_sep:.1f} km > 50 km) "
@@ -220,9 +220,9 @@ class TestGraveyardBurnLOSValidation:
         engine.sim_time = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
         # At GMST≈0, all ground stations are at lon ∈ {77°, 15°, -117°, -71°, 77°, 167°}
-        # A satellite at lon=180° (Pacific) is maximally distant from all of them.
-        lat = math.radians(0.0)
-        lon = math.radians(180.0)      # antipodal to India/Europe cluster
+        # Searching for blackout
+        lat = math.radians(-80.0)
+        lon = math.radians(0.0)
         r   = R_EARTH + 400.0
         v   = math.sqrt(MU_EARTH / r)
 

@@ -208,7 +208,7 @@ class ConjunctionAssessor:
         # ── Stage 3: Vectorized Coarse Sweep ─────────────────────────────────
         # Evaluate distances on a coarse grid (every 600s) for ALL candidate pairs at once.
         # This keeps the hot path in NumPy and avoids millions of Python loop iterations.
-        grid_points = np.linspace(0.0, lookahead_s, int(lookahead_s / 600) + 1)
+        grid_points = np.linspace(0.0, lookahead_s, int(lookahead_s / 60) + 1)
         
         # Pre-evaluate all states on the grid
         all_sat_grid = sat_batch_sol(grid_points) # (S, 6, T)
@@ -228,7 +228,7 @@ class ConjunctionAssessor:
         dist_grid = np.sqrt(dist_sq_grid)
         
         # Identify pairs/windows that drop below 50km
-        threatening_mask = np.any(dist_grid < 50.0, axis=1)
+        threatening_mask = np.any(dist_grid < 500.0, axis=1)
         
         # ── Stage 4: Refined TCA + CDM Emission ──────────────────────────────
         threatening_indices = np.where(threatening_mask)[0]
@@ -245,8 +245,8 @@ class ConjunctionAssessor:
                 t_center = grid_points[w_idx]
                 if t_center <= processed_time: continue
                 
-                t_lo = max(0.0, t_center - 600.0)
-                t_hi = min(lookahead_s, t_center + 600.0)
+                t_lo = max(0.0, t_center - 60.0)
+                t_hi = min(lookahead_s, t_center + 60.0)
                 
                 # Brent minimization on the dense polynomial
                 def dist_fn(t, sid=sat_id, did=deb_id):

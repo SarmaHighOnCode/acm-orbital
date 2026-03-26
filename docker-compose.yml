@@ -1,7 +1,6 @@
 services:
   acm:
     build: .
-    user: "appuser"
     ports:
       - '8000:8000'
     environment:
