@@ -265,11 +265,14 @@ class ConjunctionAssessor:
                     d_tca = deb_batch_sol(tca_s)[deb_id_to_idx[deb_id]]
                     rel_vel = float(np.linalg.norm(s_tca[3:] - d_tca[3:]))
 
+                    rel_v = d_tca[3:] - s_tca[3:]
+                    approach_angle = float(np.arctan2(rel_v[1], rel_v[0]))
                     warnings.append(CDM(
                         satellite_id=sat_id, debris_id=deb_id,
                         tca=base_time + timedelta(seconds=tca_s),
                         miss_distance_km=float(res.fun),
                         risk=risk, relative_velocity_km_s=rel_vel,
+                        approach_angle_rad=approach_angle
                     ))
                 
                 processed_time = t_hi
@@ -377,11 +380,14 @@ class ConjunctionAssessor:
                     s2_tca = batch_sol(tca_s)[id_to_idx[s2_id]]
                     rel_vel = float(np.linalg.norm(s1_tca[3:] - s2_tca[3:]))
 
+                    rel_v = s2_tca[3:] - s1_tca[3:]
+                    approach_angle = float(np.arctan2(rel_v[1], rel_v[0]))
                     warnings.append(CDM(
                         satellite_id=s1_id, debris_id=s2_id,
                         tca=base_time + timedelta(seconds=tca_s),
                         miss_distance_km=float(res.fun),
                         risk=risk, relative_velocity_km_s=rel_vel,
+                        approach_angle_rad=approach_angle
                     ))
                     # Found one in this window, but there could be more in next windows (next orbits)
                     # For safety, we keep checking other windows.

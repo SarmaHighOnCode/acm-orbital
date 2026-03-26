@@ -71,3 +71,4 @@ class CDM:
     miss_distance_km: float                # Minimum distance at TCA
     risk: str                              # "GREEN" | "YELLOW" | "RED" | "CRITICAL"
     relative_velocity_km_s: float = 0.0
+    approach_angle_rad: float = 0.0

@@ -1104,8 +1104,10 @@ class SimulationEngine:
                 "satellite_id": cdm.satellite_id,
                 "debris_id": cdm.debris_id,
                 "tca": tca_iso,
+                "time_to_tca_s": max(0.0, (cdm.tca - self.sim_time).total_seconds()),
                 "miss_distance_km": round(cdm.miss_distance_km, 4),
                 "risk": cdm.risk,
+                "approach_angle_rad": round(getattr(cdm, "approach_angle_rad", 0.0), 3),
                 "relative_velocity_km_s": round(cdm.relative_velocity_km_s, 3),
             })
 

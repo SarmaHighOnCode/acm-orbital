@@ -25,10 +25,12 @@ const MAX_TCA_S = 3600; // 1 hour
 
 /**
  * Derive a deterministic approach-vector angle from CDM properties.
- * Uses a hash of relative_velocity + debris_id to distribute CDMs angularly,
- * since the API does not provide explicit RTN approach vectors.
+ * Now dynamically mapped from backend true velocity vector data if available.
  */
 function approachAngle(cdm) {
+  if (cdm.approach_angle_rad !== undefined && cdm.approach_angle_rad !== null) {
+      return cdm.approach_angle_rad;
+  }
   // Simple hash: sum char codes of debris_id, multiply by relative velocity
   let hash = 0;
   const id = cdm.debris_id || '';
