@@ -69,7 +69,7 @@ curl -X POST http://localhost:8000/api/telemetry \
 
 ## Stepping the Simulation
 
-While auto-stepped in real-time, you can manually advance the simulation clock to propagate orbits and trigger conjunction detection:
+Whether the simulation is paused or auto-stepping (toggled via the UI or API), you can manually advance the simulation clock to propagate orbits and trigger conjunction detection:
 
 ```bash
 curl -X POST http://localhost:8000/api/simulate/step \

@@ -25,11 +25,13 @@ docker compose up
 
 Wait for `AUTO_SEED | Complete — dashboard ready` in the terminal (~60 seconds), then open **http://localhost:8000**.
 
-The engine automatically seeds **50 satellites + 10,000 debris objects** and runs 5 simulation steps so the dashboard is fully populated on first load — no manual setup required.
+The engine automatically seeds **50 satellites + 10,000 debris objects** and runs 5 simulation steps so the dashboard is fully populated on first load.
+
+**Note:** The engine starts paused. Auto-step is **disabled by default**. To start the autonomous simulation loop, toggle the **Auto-Step** switch in the dashboard header.
 
 ### Running Tests & API Injection
 
-While the engine runs autonomously, you can inject test vectors, schedule manual maneuvers, or run automated verification mid-simulation via the REST API:
+While the engine runs (when auto-step is toggled on), you can inject test vectors, schedule manual maneuvers, or run automated verification mid-simulation via the REST API:
 
 **Inject Custom Telemetry:**
 ```bash
