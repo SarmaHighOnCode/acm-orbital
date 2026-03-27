@@ -439,6 +439,49 @@ class ConjunctionAssessor:
         return warnings
 
     @staticmethod
+    def substep_collision_check(
+        sat_sv: np.ndarray,
+        deb_sv: np.ndarray,
+        step_seconds: float,
+    ) -> tuple[bool, float]:
+        """Check for pass-through collisions during a single time step.
+
+        When relative velocity is high (>10 km/s), a debris fragment can
+        traverse the 100 m collision sphere within a fraction of a second.
+        A single end-of-step distance check would miss the collision entirely.
+
+        This method linearly interpolates the relative trajectory and checks
+        the minimum approach distance along the segment.
+
+        Args:
+            sat_sv:       Satellite state [x,y,z,vx,vy,vz] at step START.
+            deb_sv:       Debris state [x,y,z,vx,vy,vz] at step START.
+            step_seconds: Duration of the simulation step.
+
+        Returns:
+            (collision_detected, min_distance_km)
+        """
+        from config import CONJUNCTION_THRESHOLD_KM
+
+        dr = deb_sv[:3] - sat_sv[:3]   # relative position
+        dv = deb_sv[3:] - sat_sv[3:]   # relative velocity
+        v_rel = float(np.linalg.norm(dv))
+
+        if v_rel < 1e-9:
+            dist = float(np.linalg.norm(dr))
+            return dist < CONJUNCTION_THRESHOLD_KM, dist
+
+        # Time of closest approach along the linear trajectory
+        # t_min = -dot(dr, dv) / dot(dv, dv)
+        t_min = -float(np.dot(dr, dv)) / float(np.dot(dv, dv))
+        t_min = max(0.0, min(t_min, step_seconds))
+
+        closest = dr + dv * t_min
+        min_dist = float(np.linalg.norm(closest))
+
+        return min_dist < CONJUNCTION_THRESHOLD_KM, min_dist
+
+    @staticmethod
     def _classify_risk(miss_distance_km: float) -> str:
         """Classify conjunction risk level from miss distance.
 

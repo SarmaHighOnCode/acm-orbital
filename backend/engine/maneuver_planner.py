@@ -94,6 +94,66 @@ class ManeuverPlanner:
         Q: np.ndarray     = np.column_stack([R_hat, T_hat, N_hat])
         return Q @ dv_rtn
 
+    # ── Fleet-level coordination ────────────────────────────────────────
+
+    @staticmethod
+    def select_fleet_optimal_evasions(
+        cdm_groups: dict[str, list],
+        fuel_remaining: dict[str, float],
+    ) -> dict[str, object]:
+        """Pick the single most fuel-efficient threat to evade per satellite.
+
+        When multiple CDMs target the same satellite simultaneously, this
+        method selects the one whose evasion delta-v will be smallest —
+        minimising total fleet fuel expenditure (Rubric §2: Fuel Efficiency).
+
+        For sat-vs-sat conjunctions, the satellite with MORE remaining fuel
+        is assigned the evasion; the other holds course.
+
+        Args:
+            cdm_groups: {sat_id: [CDM, ...]} grouped threats per satellite.
+            fuel_remaining: {sat_id: fuel_kg} current fuel state.
+
+        Returns:
+            {sat_id: CDM} — the single CDM each satellite should evade.
+        """
+        assignments: dict[str, object] = {}
+
+        for sat_id, cdms in cdm_groups.items():
+            if not cdms:
+                continue
+
+            # Score each CDM: prefer the one requiring the smallest evasion
+            # delta-v ≈ proportional to (threshold / miss_distance) — closer
+            # misses need larger burns.  Also penalise very short TCA lead
+            # times (less room for optimal timing).
+            best_cdm = None
+            best_score = float('inf')
+
+            for cdm in cdms:
+                miss = max(cdm.miss_distance_km, 1e-6)
+                # Lower miss → higher required dv → higher score (worse)
+                dv_proxy = 0.1 / miss  # km/s rough scale
+
+                # Sat-vs-sat: only the fuel-richer satellite should evade
+                if hasattr(cdm, 'debris_id') and cdm.debris_id in fuel_remaining:
+                    peer_id = cdm.debris_id if cdm.satellite_id == sat_id else cdm.satellite_id
+                    if peer_id in fuel_remaining:
+                        peer_fuel = fuel_remaining.get(peer_id, 0)
+                        my_fuel = fuel_remaining.get(sat_id, 0)
+                        if peer_fuel > my_fuel + 2.0:
+                            # Peer is healthier; skip — peer will handle it
+                            continue
+
+                if dv_proxy < best_score:
+                    best_score = dv_proxy
+                    best_cdm = cdm
+
+            if best_cdm is not None:
+                assignments[sat_id] = best_cdm
+
+        return assignments
+
     # ── Evasion planning ──────────────────────────────────────────────────────
 
     def plan_evasion(

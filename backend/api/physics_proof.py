@@ -122,10 +122,24 @@ async def physics_proof(request: Request):
         "collision_count": engine.collision_count if engine else 0,
     }
 
+    # Dynamically count test functions across all test files
+    import glob as _glob, re as _re
+    _test_files = _glob.glob("backend/tests/test_*.py") + _glob.glob("tests/test_*.py")
+    _test_total = 0
+    _file_count = 0
+    for _tf in set(_test_files):
+        try:
+            with open(_tf) as _fh:
+                _content = _fh.read()
+            _test_total += len(_re.findall(r'^\s*def test_', _content, _re.MULTILINE))
+            _file_count += 1
+        except OSError:
+            pass
+
     all_pass = all(r["status"] == "PASS" for r in results)
     return {
         "overall": "ALL PASS" if all_pass else "SOME FAILURES",
         "benchmarks": results,
         "engine_state": eng_state,
-        "test_count": "1,163 pytest tests (all passing)",
+        "test_count": f"{_test_total:,} tests across {_file_count} files",
     }

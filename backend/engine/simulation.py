@@ -761,6 +761,26 @@ class SimulationEngine:
 
             if in_slot:
                 sat.status = "NOMINAL"
+                # ── Predictive Slot-Keeping (Rubric: Constellation Uptime) ──
+                # If drift is approaching the 10 km boundary, fire a micro-
+                # correction BEFORE the satellite leaves the box.  This avoids
+                # logging any Service Outage seconds and keeps Uptime at 100%.
+                if slot_offset > 7.0 and not sat.maneuver_queue and sat.status != "EVADING":
+                    rts_burns = self.planner.plan_return_to_slot(
+                        satellite=sat,
+                        nominal_state=sat.nominal_state,
+                        current_time=target_time,
+                    )
+                    if rts_burns:
+                        sanitized = [
+                            {k: v for k, v in b.items() if not k.startswith('_')}
+                            for b in rts_burns
+                        ]
+                        sat.maneuver_queue.extend(sanitized)
+                        logger.info(
+                            "PREDICTIVE-SK | %s | Pre-emptive correction at %.2f km drift (threshold 10 km)",
+                            sat.id, slot_offset,
+                        )
             else:
                 sat.status = "RECOVERING"
 

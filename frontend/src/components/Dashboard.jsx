@@ -10,7 +10,7 @@
  * Toggle button switches between 3D Globe (Three.js) and 2D Ground Track (Canvas).
  */
 
-import React, { useState, useCallback, Suspense } from 'react';
+import React, { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import GlobeView from './GlobeView';
 import GroundTrack from './GroundTrack';
 import BullseyePlot from './BullseyePlot';
@@ -314,6 +314,26 @@ export default function Dashboard() {
   const [view, setView] = useState('3d');
   const [showPhysicsProof, setShowPhysicsProof] = useState(false);
   const [showMissionReport, setShowMissionReport] = useState(false);
+  const [satSearch, setSatSearch] = useState('');
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchRef = useRef(null);
+  const setSelectedSatellite = useStore((s) => s.setSelectedSatellite);
+  const selectedSatellite = useStore((s) => s.selectedSatellite);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowSearchDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filteredSats = satSearch.trim()
+    ? satellites.filter((s) => s.id.toLowerCase().includes(satSearch.toLowerCase()))
+    : satellites;
 
   // Compute rubric-aligned metrics
   const totalFuel = satellites.reduce((s, sat) => s + (sat.fuel_kg || 0), 0);
@@ -465,6 +485,61 @@ export default function Dashboard() {
         </div>
         {/* Bottom row: telemetry ticker */}
         <div className="h-6 flex items-center px-4 gap-5 text-[10px] font-mono text-gray-500" style={{ borderTop: '1px solid rgba(26,37,53,0.5)', background: 'rgba(6,10,20,0.4)' }}>
+          {/* Satellite Search/Filter */}
+          <div ref={searchRef} style={{ position: 'relative' }}>
+            <input
+              type="text"
+              placeholder={selectedSatellite || 'Search SAT...'}
+              value={satSearch}
+              onChange={(e) => { setSatSearch(e.target.value); setShowSearchDropdown(true); }}
+              onFocus={() => setShowSearchDropdown(true)}
+              style={{
+                width: 110,
+                padding: '1px 6px',
+                fontSize: 10,
+                fontFamily: 'JetBrains Mono, monospace',
+                background: 'rgba(0,255,136,0.04)',
+                border: '1px solid rgba(0,255,136,0.15)',
+                borderRadius: 4,
+                color: '#d1d5db',
+                outline: 'none',
+              }}
+            />
+            {showSearchDropdown && filteredSats.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, zIndex: 999,
+                background: '#0a1020', border: '1px solid #1a2535',
+                borderRadius: 4, maxHeight: 180, overflowY: 'auto',
+                width: 160, marginTop: 2,
+              }}>
+                {filteredSats.slice(0, 20).map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => {
+                      setSelectedSatellite(s.id);
+                      setSatSearch('');
+                      setShowSearchDropdown(false);
+                    }}
+                    style={{
+                      padding: '3px 8px', fontSize: 10, cursor: 'pointer',
+                      color: s.id === selectedSatellite ? '#00ff88' : '#9ca3af',
+                      background: s.id === selectedSatellite ? 'rgba(0,255,136,0.08)' : 'transparent',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      display: 'flex', justifyContent: 'space-between',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(100,140,180,0.1)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = s.id === selectedSatellite ? 'rgba(0,255,136,0.08)' : 'transparent'}
+                  >
+                    <span>{s.id}</span>
+                    <span style={{
+                      color: s.status === 'NOMINAL' ? '#00ff88' : s.status === 'EOL' ? '#ff3355' : '#ffaa00',
+                      fontSize: 9,
+                    }}>{s.status?.slice(0, 3)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <span className="text-gray-600">SIM {timestamp ? new Date(timestamp).toISOString().slice(0, 19) + 'Z' : '\u2014'}</span>
           <span>SATS <span className="text-gray-300">{satellites.length}</span></span>
           <span>CDMs <span className={activeCdmCount > 0 ? 'text-evading font-semibold' : 'text-gray-300'}>{activeCdmCount}</span>
