@@ -225,11 +225,11 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 
 | Layer | Technology | Lines of Code |
 |---|---|---|
-| Physics Engine | Python 3.11 + NumPy + SciPy | ~3,200 |
+| Physics Engine | Python 3.11 + NumPy + SciPy | ~3,700 |
 | API Layer | FastAPI + Pydantic + orjson | ~570 |
-| Frontend | React 18 + Canvas + Three.js + Zustand | ~3,570 |
-| Tests | pytest | ~11,370 |
-| **Total** | | **~18,700** |
+| Frontend | React 18 + Canvas + Three.js + Zustand | ~3,560 |
+| Tests | pytest | ~11,300 |
+| **Total** | | **~19,130** |
 
 ---
 
@@ -341,7 +341,7 @@ acm-orbital/
       kessler.py                # Kessler cascade risk scoring
     data/
       ground_stations.csv       # 6 stations (Bengaluru, Svalbard, Goldstone, Punta Arenas, IIT Delhi, McMurdo)
-    tests/                      # 1,183 tests across 32 files
+    tests/                      # 1,183 tests across 30 files
   frontend/
     src/
       App.jsx                   # Root + 2s snapshot polling
@@ -370,7 +370,7 @@ acm-orbital/
 
 See the **[Testing Guide](TESTING.md)** for extensive details on test fixtures, stress profiles, precision benchmarks, and how to write new tests.
 
-**1,183 tests collected | all passing | 32 test files**
+**1,183 tests collected | all passing | 30 test files**
 
 ```bash
 cd backend && python -m pytest tests/ -q
