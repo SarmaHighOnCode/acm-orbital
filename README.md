@@ -76,6 +76,8 @@ The engine automatically seeds **50 satellites + 10,000 debris objects** and run
 
 **Note:** The engine starts paused. Auto-step is **disabled by default**. To start the autonomous simulation loop, toggle the **Auto-Step** switch in the dashboard header.
 
+**Safety score starts at ~75%** — this is intentional. The initial seed deliberately places several satellites in high-risk proximity to debris so the collision avoidance engine has active threats to respond to on first load. As the simulation runs and the engine executes evasion burns, the safety score climbs toward 100%. This demonstrates the engine working in real-time rather than starting from a clean, threat-free state.
+
 ### Running Tests & API Injection
 
 While the engine runs (when auto-step is toggled on), you can inject test vectors, schedule manual maneuvers, or run automated verification mid-simulation via the REST API:
