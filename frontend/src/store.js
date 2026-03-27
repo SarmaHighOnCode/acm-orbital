@@ -33,6 +33,9 @@ const useStore = create((set, get) => ({
   // { [satId]: [{ lat, lon, t }, ...] }
   satHistory: {},
 
+  // Kessler risk data (from /api/kessler-risk)
+  kesslerData: null,
+
   // UI state
   selectedSatellite: null,
   isLoading: false,
@@ -90,6 +93,7 @@ const useStore = create((set, get) => ({
   setError: (error) => set({ error }),
   setConnected: (val) => set({ connected: val }),
   setAutoStepEnabled: (val) => set({ autoStepEnabled: val }),
+  setKesslerData: (data) => set({ kesslerData: data }),
 }));
 
 export default useStore;
