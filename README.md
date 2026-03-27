@@ -14,6 +14,53 @@ J2-perturbed DOP853 orbital propagation | 4-stage KDTree conjunction assessment 
 
 ---
 
+## Requirements
+
+### Docker (recommended)
+
+| Dependency | Version |
+|---|---|
+| Docker Engine | 24+ |
+| Docker Compose | v2 (bundled with Docker Desktop) |
+
+No other local tooling required — everything runs inside `ubuntu:22.04`.
+
+### Manual / Development
+
+**Backend (Python)**
+
+| Package | Version |
+|---|---|
+| Python | 3.11 |
+| fastapi | 0.135.1 |
+| uvicorn | 0.41.0 |
+| pydantic | 2.12.5 |
+| numpy | 2.4.3 |
+| scipy | 1.17.1 |
+| sgp4 | 2.25 |
+| orjson | 3.11.7 |
+| structlog | 25.5.0 |
+| python-dateutil | 2.9.0 |
+| pytest | 9.0.2 |
+| httpx | 0.28.1 |
+
+**Frontend (Node)**
+
+| Package | Version |
+|---|---|
+| Node.js | 18+ |
+| React | ^18.3 |
+| Three.js | ^0.165 |
+| @react-three/fiber | ^8.16 |
+| @react-three/drei | ^9.105 |
+| Zustand | ^4.5 |
+| Recharts | ^2.12 |
+| satellite.js | ^5.0 |
+| Vite | ^5.4 |
+| Tailwind CSS | ^3.4 |
+
+---
+
 ## Quick Start
 
 ```bash
@@ -48,7 +95,7 @@ curl -X POST http://localhost:8000/api/maneuver/schedule \
 ```
 
 **Run the Automated Test Suite:**
-To run the 1,100+ physics engine tests directly on your machine:
+To run the 1,183 physics engine tests directly on your machine:
 ```bash
 cd backend
 pip install -r requirements.txt
@@ -87,7 +134,7 @@ How our implementation maps to each scoring category:
 |---|---|---|
 | Collision detection | 4-stage filter: altitude band (kills 85% debris) &#8594; KDTree spatial index &#8594; Brent TCA refinement &#8594; CDM emission | `backend/engine/collision.py` |
 | Conjunction threshold | 100 m hard threshold (0.100 km); KDTree uses 200 km search radius for candidate filtering | `backend/config.py:CONJUNCTION_THRESHOLD_KM` |
-| Autonomous evasion | CRITICAL/RED CDMs trigger automatic evasion + recovery burn sequences | `backend/engine/simulation.py:_auto_plan_evasion()` |
+| Autonomous evasion | CRITICAL/RED CDMs trigger automatic evasion + recovery burn sequences | `backend/engine/simulation.py:_auto_plan_maneuvers()` |
 | Instantaneous scan | Separate KDTree scan at current positions catches inter-step collisions | `backend/engine/collision.py:check_collisions()` |
 | 24-hour lookahead | CDM prediction window spans full 24h via DOP853 dense output | `backend/engine/collision.py:assess()` |
 | Impulsive burn model | Velocity-only delta-v application, no position displacement during burn | `backend/engine/simulation.py:_execute_maneuvers()` |
@@ -145,7 +192,7 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 | Architecture | 3-layer separation: Physics Engine (pure Python, zero HTTP) &#8594; API Layer (FastAPI + Pydantic) &#8594; Frontend (React + Canvas) |
 | Single source of truth | All 16 physical constants frozen in `backend/config.py` |
 | Type safety | Pydantic request/response schemas with strict validation |
-| Test suite | 1,163 pytest-collected tests across 30 files (all passing) |
+| Test suite | 1,183 pytest-collected tests across 32 files (all passing) |
 | Structured logging | `structlog` with JSON output for distributed tracing |
 | No O(N^2) | Architectural invariant enforced across all modules |
 | Configuration | `backend/config.py` imported everywhere, no magic numbers |
@@ -163,7 +210,7 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
                                  | HTTP/JSON (2s polling)
                     +------------+--------------+
                     |   FastAPI + Pydantic       |
-                    |   4 REST endpoints         |
+                    |   5+ REST endpoints        |
                     |   orjson serialization      |
                     +------------+--------------+
                                  | Python calls
@@ -176,11 +223,11 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 
 | Layer | Technology | Lines of Code |
 |---|---|---|
-| Physics Engine | Python 3.11 + NumPy + SciPy | 2,416 |
-| API Layer | FastAPI + Pydantic + orjson | 466 |
-| Frontend | React 18 + Canvas + Three.js + Zustand | 3,316 |
-| Tests | pytest | 9,743 |
-| **Total** | | **~17,100** |
+| Physics Engine | Python 3.11 + NumPy + SciPy | ~3,200 |
+| API Layer | FastAPI + Pydantic + orjson | ~570 |
+| Frontend | React 18 + Canvas + Three.js + Zustand | ~3,570 |
+| Tests | pytest | ~11,370 |
+| **Total** | | **~18,700** |
 
 ---
 
@@ -280,7 +327,7 @@ acm-orbital/
       telemetry.py              # POST /api/telemetry
       simulate.py               # POST /api/simulate/step + /autostep
       maneuver.py               # POST /api/maneuver/schedule
-      visualization.py          # GET /api/visualization/snapshot
+      visualization.py          # GET /api/visualization/snapshot + /kessler-risk + /debris-density + /physics-proof + /mission-report
     engine/
       propagator.py             # J2-perturbed DOP853 batch propagation
       collision.py              # 4-stage KDTree conjunction assessment
@@ -289,9 +336,10 @@ acm-orbital/
       ground_stations.py        # LOS elevation + ECEF/ECI transforms
       simulation.py             # 7-stage tick orchestrator
       models.py                 # Satellite/Debris data classes
+      kessler.py                # Kessler cascade risk scoring
     data/
       ground_stations.csv       # 6 stations (Bengaluru, Svalbard, Goldstone, Punta Arenas, IIT Delhi, McMurdo)
-    tests/                      # 1,163 tests across 30 files
+    tests/                      # 1,183 tests across 32 files
   frontend/
     src/
       App.jsx                   # Root + 2s snapshot polling
@@ -308,6 +356,7 @@ acm-orbital/
       utils/
         api.js                  # Snapshot fetcher with retry
         coordinates.js          # ECI/geodetic transforms
+        constants.js            # Shared frontend constants
   docs/
     technical_report.tex        # LaTeX source
     Technical Report.pdf        # Compiled 15-page report
@@ -319,7 +368,7 @@ acm-orbital/
 
 See the **[Testing Guide](TESTING.md)** for extensive details on test fixtures, stress profiles, precision benchmarks, and how to write new tests.
 
-**1,163 tests collected | all passing | 30 test files**
+**1,183 tests collected | all passing | 32 test files**
 
 ```bash
 cd backend && python -m pytest tests/ -q
