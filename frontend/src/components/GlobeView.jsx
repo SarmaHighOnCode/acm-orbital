@@ -593,7 +593,7 @@ function GroundStationMarker({ gs }) {
 
   const surfacePos = useMemo(() => {
     const p = geoToCartesian(gs.lat, gs.lon, 0);
-    return p.clone().normalize().multiplyScalar(R_EARTH * 1.002);
+    return p.clone().normalize().multiplyScalar(R_EARTH * 1.012);
   }, [gs.lat, gs.lon]);
 
   const quaternion = useMemo(() =>
@@ -607,7 +607,7 @@ function GroundStationMarker({ gs }) {
     <group position={surfacePos.toArray()} quaternion={quaternion.toArray()}>
       <mesh>
         <circleGeometry args={[0.065, 18]} />
-        <meshBasicMaterial color="#fbbf24" transparent opacity={0.75} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#fbbf24" transparent opacity={0.75} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
       <mesh position={[0, 0.13, 0]}>
         <coneGeometry args={[0.028, 0.22, 6]} />
@@ -615,7 +615,7 @@ function GroundStationMarker({ gs }) {
       </mesh>
       <mesh ref={pulsRef}>
         <ringGeometry args={[0.08, 0.115, 22]} />
-        <meshBasicMaterial color="#fbbf24" transparent opacity={0.50} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#fbbf24" transparent opacity={0.50} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
         <Html occlude="blending" position={[0, 0.38, 0]} center style={{ pointerEvents: 'none' }}>
         <div style={{
