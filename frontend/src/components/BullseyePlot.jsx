@@ -155,6 +155,17 @@ export default function BullseyePlot() {
       ctx.fillText('T', cx + maxR + 8, cy + 3);
       ctx.fillText('N', cx, cy + maxR + 12);
 
+      // ── "No active threats" message when satellite selected but no CDMs ──
+      if (relevantCdms.length === 0) {
+        ctx.fillStyle = '#374151';
+        ctx.font = '11px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No active threats', cx, cy + maxR * 0.45);
+        ctx.fillStyle = '#2d3748';
+        ctx.font = '9px Inter, sans-serif';
+        ctx.fillText('Monitoring for conjunctions...', cx, cy + maxR * 0.45 + 16);
+      }
+
       // ── CDM debris dots ──
       for (let i = 0; i < relevantCdms.length; i++) {
         const cdm = relevantCdms[i];
