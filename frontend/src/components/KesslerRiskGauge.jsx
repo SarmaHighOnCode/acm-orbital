@@ -14,7 +14,8 @@
  *   - Cascade probability display
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
+import useStore from '../store';
 
 const RISK_COLORS = {
   LOW: '#00ff88',
@@ -25,7 +26,8 @@ const RISK_COLORS = {
 };
 
 export default function KesslerRiskGauge() {
-  const [data, setData] = useState(null);
+  const data = useStore((s) => s.kesslerData);
+  const setKesslerData = useStore((s) => s.setKesslerData);
   const canvasRef = useRef(null);
   const animRef = useRef({ targetAngle: 0, currentAngle: 0 });
 
@@ -35,7 +37,7 @@ export default function KesslerRiskGauge() {
     const fetchData = () => {
       fetch('/api/kessler-risk')
         .then((r) => r.ok ? r.json() : null)
-        .then((d) => { if (!cancelled && d) setData(d); })
+        .then((d) => { if (!cancelled && d) setKesslerData(d); })
         .catch(() => {});
     };
     fetchData();

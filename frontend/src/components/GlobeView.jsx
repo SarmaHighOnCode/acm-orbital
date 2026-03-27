@@ -206,17 +206,22 @@ function Atmosphere() {
 /* ── LEO altitude reference ring ───────────────────────── */
 function OrbitRing({ altKm = 400, color = '#1a4060', opacity = 0.35 }) {
   const r = (R_EARTH_KM + altKm) * SCALE_FACTOR;
-  const geometry = useMemo(() => {
+  const lineObj = useMemo(() => {
     const pts = [];
     for (let i = 0; i <= 128; i++) {
       const a = (i / 128) * Math.PI * 2;
       pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
     }
-    return new THREE.BufferGeometry().setFromPoints(pts);
-  }, [r]);
-  return (
-    <primitive object={new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity }))} />
-  );
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+    return new THREE.Line(geo, mat);
+  }, [r, color, opacity]);
+
+  useEffect(() => {
+    return () => { lineObj.geometry.dispose(); lineObj.material.dispose(); };
+  }, [lineObj]);
+
+  return <primitive object={lineObj} />;
 }
 
 /* ── Full Orbital Path Ring for selected satellite ─────── */
@@ -266,24 +271,23 @@ function OrbitalPathRing() {
     return pts;
   }, [satellites, selectedSatellite, satHistory]);
 
-  if (!orbitPath) return null;
+  const lineObj = useMemo(() => {
+    if (!orbitPath) return null;
+    const arr = new Float32Array(orbitPath.flatMap((p) => [p.x, p.y, p.z]));
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    const mat = new THREE.LineBasicMaterial({ color: '#00ff88', transparent: true, opacity: 0.15 });
+    return new THREE.Line(geo, mat);
+  }, [orbitPath]);
 
-  const arr = new Float32Array(orbitPath.flatMap((p) => [p.x, p.y, p.z]));
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  useEffect(() => {
+    return () => {
+      if (lineObj) { lineObj.geometry.dispose(); lineObj.material.dispose(); }
+    };
+  }, [lineObj]);
 
-  return (
-    <primitive
-      object={new THREE.Line(
-        geo,
-        new THREE.LineBasicMaterial({
-          color: '#00ff88',
-          transparent: true,
-          opacity: 0.15,
-        })
-      )}
-    />
-  );
+  if (!lineObj) return null;
+  return <primitive object={lineObj} />;
 }
 
 /* ── Satellite Points (enhanced — larger with glow) ────── */
@@ -443,67 +447,49 @@ function SatelliteTrails() {
     return m;
   }, [satellites]);
 
-  const trails = useMemo(() => {
+  const trailObjects = useMemo(() => {
     const result = [];
     for (const [satId, history] of Object.entries(satHistory)) {
       if (!history || history.length < 2) continue;
       const isSelected = satId === selectedSatellite;
       const status     = satStatusMap[satId] || 'NOMINAL';
-
-      // Create multiple segments with fading opacity
       const points = history.map((pt) => geoToCartesian(pt.lat, pt.lon, pt.alt || 400));
 
       if (isSelected) {
-        // For selected satellite, draw multiple fading segments
         const color = STATUS_HEX[status] || '#00ff88';
-        const segments = [];
         for (let i = 1; i < points.length; i++) {
           const opacity = (i / points.length) * 0.95;
-          segments.push({ p1: points[i - 1], p2: points[i], opacity, color });
+          const arr = new Float32Array([points[i-1].x, points[i-1].y, points[i-1].z, points[i].x, points[i].y, points[i].z]);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+          const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, linewidth: 2 });
+          result.push(new THREE.Line(geo, mat));
         }
-        result.push({ satId, segments, isSelected: true });
       } else {
-        // Non-selected: single line with lower opacity
-        result.push({ satId, points, isSelected: false, color: '#1a4a70' });
+        const arr = new Float32Array(points.flatMap((p) => [p.x, p.y, p.z]));
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+        const mat = new THREE.LineBasicMaterial({ color: '#1a4a70', transparent: true, opacity: 0.4 });
+        result.push(new THREE.Line(geo, mat));
       }
     }
     return result;
   }, [satHistory, selectedSatellite, satStatusMap]);
 
+  useEffect(() => {
+    return () => {
+      for (const obj of trailObjects) {
+        obj.geometry.dispose();
+        obj.material.dispose();
+      }
+    };
+  }, [trailObjects]);
+
   return (
     <group>
-      {trails.map((trail) => {
-        if (trail.isSelected && trail.segments) {
-          // Render gradient trail as individual segments
-          return trail.segments.map((seg, i) => {
-            const arr = new Float32Array([seg.p1.x, seg.p1.y, seg.p1.z, seg.p2.x, seg.p2.y, seg.p2.z]);
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-            return (
-              <primitive
-                key={`trail-${trail.satId}-${i}`}
-                object={new THREE.Line(
-                  geo,
-                  new THREE.LineBasicMaterial({ color: seg.color, transparent: true, opacity: seg.opacity, linewidth: 2 })
-                )}
-              />
-            );
-          });
-        } else {
-          const arr = new Float32Array(trail.points.flatMap((p) => [p.x, p.y, p.z]));
-          const geo = new THREE.BufferGeometry();
-          geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-          return (
-            <primitive
-              key={`trail-${trail.satId}`}
-              object={new THREE.Line(
-                geo,
-                new THREE.LineBasicMaterial({ color: trail.color, transparent: true, opacity: 0.4 })
-              )}
-            />
-          );
-        }
-      })}
+      {trailObjects.map((obj, i) => (
+        <primitive key={i} object={obj} />
+      ))}
     </group>
   );
 }
@@ -536,24 +522,25 @@ function PredictedTrajectory() {
     return pts;
   }, [satHistory, selectedSatellite]);
 
-  const lineRef = useRef();
-  useEffect(() => {
-    if (lineRef.current?.geometry) lineRef.current.computeLineDistances();
+  const lineObj = useMemo(() => {
+    if (!prediction) return null;
+    const arr = new Float32Array(prediction.flatMap((p) => [p.x, p.y, p.z]));
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    const mat = new THREE.LineDashedMaterial({ color: '#00ff88', transparent: true, opacity: 0.45, dashSize: 0.15, gapSize: 0.08 });
+    const line = new THREE.Line(geo, mat);
+    line.computeLineDistances();
+    return line;
   }, [prediction]);
 
-  if (!prediction) return null;
-  const arr = new Float32Array(prediction.flatMap((p) => [p.x, p.y, p.z]));
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-  return (
-    <primitive
-      ref={lineRef}
-      object={new THREE.Line(
-        geo,
-        new THREE.LineDashedMaterial({ color: '#00ff88', transparent: true, opacity: 0.45, dashSize: 0.15, gapSize: 0.08 })
-      )}
-    />
-  );
+  useEffect(() => {
+    return () => {
+      if (lineObj) { lineObj.geometry.dispose(); lineObj.material.dispose(); }
+    };
+  }, [lineObj]);
+
+  if (!lineObj) return null;
+  return <primitive object={lineObj} />;
 }
 
 /* ── Debris cloud ──────────────────────────────────────── */
@@ -611,7 +598,7 @@ function GroundStationMarker({ gs }) {
       </mesh>
       <mesh position={[0, 0.13, 0]}>
         <coneGeometry args={[0.028, 0.22, 6]} />
-        <meshBasicMaterial color="#fde68a" />
+        <meshBasicMaterial color="#fde68a" depthWrite={false} />
       </mesh>
       <mesh ref={pulsRef}>
         <ringGeometry args={[0.08, 0.115, 22]} />
@@ -659,13 +646,9 @@ function CDMLines() {
   const cdms        = useStore((s) => s.cdms);
   const satellites  = useStore((s) => s.satellites);
   const debrisCloud = useStore((s) => s.debrisCloud);
-  const pulseRef    = useRef(0);
+  const groupRef    = useRef();
 
-  useFrame(({ clock }) => {
-    pulseRef.current = clock.getElapsedTime();
-  });
-
-  const lines = useMemo(() => {
+  const lineObjects = useMemo(() => {
     if (!cdms.length) return [];
     const satMap = {};
     for (const sat of satellites) satMap[sat.id] = sat;
@@ -682,24 +665,30 @@ function CDMLines() {
         : cdm.risk === 'YELLOW' ? '#ffaa00'
         : '#00ff88';
       const opacity = cdm.risk === 'CRITICAL' ? 0.9 : cdm.risk === 'RED' ? 0.7 : 0.5;
-      result.push({ key: `${cdm.satellite_id}-${cdm.debris_id}-${result.length}`, satPos, debPos, color, opacity });
+      const arr = new Float32Array([satPos.x, satPos.y, satPos.z, debPos.x, debPos.y, debPos.z]);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+      result.push(new THREE.Line(geo, mat));
     }
     return result;
   }, [cdms, satellites, debrisCloud]);
 
+  // Dispose old GPU resources when lineObjects change
+  useEffect(() => {
+    return () => {
+      for (const line of lineObjects) {
+        line.geometry.dispose();
+        line.material.dispose();
+      }
+    };
+  }, [lineObjects]);
+
   return (
-    <group>
-      {lines.map(({ key, satPos, debPos, color, opacity }) => {
-        const arr = new Float32Array([satPos.x, satPos.y, satPos.z, debPos.x, debPos.y, debPos.z]);
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-        return (
-          <primitive
-            key={key}
-            object={new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity }))}
-          />
-        );
-      })}
+    <group ref={groupRef}>
+      {lineObjects.map((obj, i) => (
+        <primitive key={i} object={obj} />
+      ))}
     </group>
   );
 }

@@ -309,7 +309,7 @@ function MissionReportModal({ onClose }) {
 }
 
 export default function Dashboard() {
-  const { timestamp, activeCdmCount, satellites, debrisCloud, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected, fleetUptimeScore, totalDeltaVms, autoStepEnabled } =
+  const { timestamp, activeCdmCount, satellites, debrisCloud, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected, fleetUptimeScore, totalDeltaVms, autoStepEnabled, kesslerData } =
     useStore();
   const [view, setView] = useState('3d');
   const [showPhysicsProof, setShowPhysicsProof] = useState(false);
@@ -534,8 +534,8 @@ export default function Dashboard() {
       <footer className="shrink-0 h-5 flex items-center px-4 gap-6 text-[9px] font-mono text-gray-600"
               style={{ borderTop: '1px solid rgba(26,37,53,0.5)', background: 'rgba(6,10,20,0.6)' }}>
         <span>Objects: {(satellites.length + debrisCloud.length).toLocaleString()}</span>
-        <span>Crowded: 425 km</span>
-        <span>Critical Shell: LEO</span>
+        <span>Crowded: {kesslerData?.most_crowded_alt_km ?? '—'} km</span>
+        <span>Critical Shells: {kesslerData?.critical_shells ?? '—'}</span>
         <span className="ml-auto text-gray-700">ACM-Orbital v2.0 &middot; National Space Hackathon 2026</span>
       </footer>
 
