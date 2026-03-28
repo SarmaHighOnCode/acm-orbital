@@ -247,12 +247,12 @@ class SimulationEngine:
         # ── INTER-TICK ASSESSMENT (Safety Fix) ───────────────────────────────
         # Run assessment immediately so that critical risks are detected and
         # evasive maneuvers can be scheduled BEFORE the first simulation step.
-        # Adaptive lookahead: scale down for large debris clouds to maintain
-        # real-time performance.  The full 24h window is restored in step().
+        # Adaptive lookahead: full 24h window up to 50K debris (contest scale).
+        # Only throttle for extreme debris counts beyond 50K.
         sat_states = {s.id: s.state_vector for s in self.satellites.values()}
         _n_deb = len(self.debris)
-        _ingest_lookahead = 86400.0 if _n_deb <= 2000 else (
-            7200.0 if _n_deb <= 5000 else 1800.0
+        _ingest_lookahead = 86400.0 if _n_deb <= 50000 else (
+            7200.0 if _n_deb <= 100000 else 1800.0
         )
         self.active_cdms = self.assessor.assess(
             sat_states,
@@ -623,10 +623,11 @@ class SimulationEngine:
 
         if scan_needed:
             sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
-            # Adaptive lookahead: scale down for very large debris clouds
+            # Adaptive lookahead: full 24h window up to 50K debris (contest scale).
+            # Only throttle for extreme debris counts beyond 50K.
             _step_n_deb = len(self.debris)
-            _step_lookahead = 86400.0 if _step_n_deb <= 2000 else (
-                7200.0 if _step_n_deb <= 5000 else 1800.0
+            _step_lookahead = 86400.0 if _step_n_deb <= 50000 else (
+                7200.0 if _step_n_deb <= 100000 else 1800.0
             )
             self.active_cdms = self.assessor.assess(
                 sat_states_snapshot,

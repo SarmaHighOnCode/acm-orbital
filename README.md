@@ -97,7 +97,7 @@ curl -X POST http://localhost:8000/api/maneuver/schedule \
 ```
 
 **Run the Automated Test Suite:**
-To run the 1,183 physics engine tests directly on your machine:
+To run the 1,165 physics engine tests directly on your machine:
 ```bash
 cd backend
 pip install -r requirements.txt
@@ -194,7 +194,7 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 | Architecture | 3-layer separation: Physics Engine (pure Python, zero HTTP) &#8594; API Layer (FastAPI + Pydantic) &#8594; Frontend (React + Canvas) |
 | Single source of truth | All 16 physical constants frozen in `backend/config.py` |
 | Type safety | Pydantic request/response schemas with strict validation |
-| Test suite | 1,183 pytest-collected tests across 32 files (all passing) |
+| Test suite | 1,165 pytest-collected tests across 30 files (all passing) |
 | Structured logging | `structlog` with JSON output for distributed tracing |
 | No O(N^2) | Architectural invariant enforced across all modules |
 | Configuration | `backend/config.py` imported everywhere, no magic numbers |
@@ -341,7 +341,7 @@ acm-orbital/
       kessler.py                # Kessler cascade risk scoring
     data/
       ground_stations.csv       # 6 stations (Bengaluru, Svalbard, Goldstone, Punta Arenas, IIT Delhi, McMurdo)
-    tests/                      # 1,183 tests across 30 files
+    tests/                      # 1,165 tests across 30 files
   frontend/
     src/
       App.jsx                   # Root + 2s snapshot polling
@@ -370,7 +370,7 @@ acm-orbital/
 
 See the **[Testing Guide](TESTING.md)** for extensive details on test fixtures, stress profiles, precision benchmarks, and how to write new tests.
 
-**1,183 tests collected | all passing | 30 test files**
+**1,165 tests collected | all passing | 30 test files**
 
 ```bash
 cd backend && python -m pytest tests/ -q

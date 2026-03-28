@@ -117,7 +117,7 @@ async def physics_proof(request: Request):
         eng_state = {"satellites": 0, "debris": 0, "active_cdms": 0, "sim_time": "N/A", "collision_count": 0, "uptime_score": "N/A"}
 
     all_pass = all(r["status"] == "PASS" for r in results)
-    return {"overall": "ALL PASS" if all_pass else "SOME FAILURES", "benchmarks": results, "engine_state": eng_state, "test_count": "1,183 tests across 30 files"}
+    return {"overall": "ALL PASS" if all_pass else "SOME FAILURES", "benchmarks": results, "engine_state": eng_state, "test_count": "1,165 tests across 30 files"}
 
 
 @router.get("/kessler-risk")

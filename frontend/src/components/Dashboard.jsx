@@ -311,7 +311,7 @@ function MissionReportModal({ onClose }) {
 export default function Dashboard() {
   const { timestamp, activeCdmCount, satellites, debrisCloud, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected, fleetUptimeScore, totalDeltaVms, autoStepEnabled, kesslerData } =
     useStore();
-  const [view, setView] = useState('3d');
+  const [view, setView] = useState('2d');
   const [showPhysicsProof, setShowPhysicsProof] = useState(false);
   const [showMissionReport, setShowMissionReport] = useState(false);
   const [satSearch, setSatSearch] = useState('');

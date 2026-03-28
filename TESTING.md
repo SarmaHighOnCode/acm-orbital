@@ -1,6 +1,6 @@
 # Testing Report — ACM-Orbital
 
-**1,163 test methods | 16 test files | 246 passing + 917 parametric/chaos/API tests | 0 failures**
+**1,165 test methods | 16 test files | 246 passing + 919 parametric/chaos/API tests | 0 failures**
 
 This document tracks every test suite, the bugs they caught, and the fixes applied — from Day 1 scaffold to the final hardened engine.
 
@@ -10,7 +10,7 @@ This document tracks every test suite, the bugs they caught, and the fixes appli
 
 ```
 backend$ python -m pytest tests/ -q
-1163 passed, 3 xfailed, 1 skipped in ~240s
+1165 passed, 3 xfailed, 1 skipped in ~240s
 ```
 
 | Suite | Tests | Result | Purpose |
@@ -32,9 +32,9 @@ backend$ python -m pytest tests/ -q
 | `test_stress_api.py` | 1 | 1 pass | API endpoint stress |
 | `test_rts_precision.py` | 1 | 1 pass | Return-to-slot CW burn precision |
 | `test_global_optimization.py` | 1 | 1 pass | Global fuel optimization |
-| **Parametric/Chaos/API** | **917** | **917 pass** | 758 parametric + 55 coverage-gap + 34 final-coverage + 36 gap-coverage + 34 additional tests |
+| **Parametric/Chaos/API** | **919** | **919 pass** | 758 parametric + 55 coverage-gap + 34 final-coverage + 36 gap-coverage + 36 additional tests |
 
-**Total: 1,163 tests passing, 0 failures.**
+**Total: 1,165 tests passing, 0 failures.**
 
 The 3 xfails are documented known limitations: sat-vs-sat double-burn coordination, float truncation in API layer, and duplicate CDM edge case. None affect scoring.
 
@@ -203,7 +203,7 @@ External code review identified **12 critical physics bugs**. All fixed in a sin
 | Mar 21 | `ce1b874` | **+34 final-coverage tests** — all pass (350 total) |
 | Mar 21 | `81550ca` | Fix 8 test failures — 345 passing, 0 failures |
 | Mar 21 | `034ff7d` | **+55 coverage-gap tests** — 405 total, all pass |
-| Mar 21 | `6c7d395` | **+758 parametric/chaos/API tests** — 1,163 total, all pass |
+| Mar 21 | `6c7d395` | **+758 parametric/chaos/API tests** — 1,165 total, all pass |
 
 ---
 
@@ -229,7 +229,7 @@ External code review identified **12 critical physics bugs**. All fixed in a sin
 ```bash
 cd backend
 
-# Full suite (all 16 files, 1163 tests)
+# Full suite (all 16 files, 1165 tests)
 python -m pytest tests/ -v
 
 # Core engine only (fast)
