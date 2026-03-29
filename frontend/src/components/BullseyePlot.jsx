@@ -21,7 +21,7 @@ const RISK_COLORS = {
 };
 
 // Max TCA window (seconds) for the plot — CDMs beyond this are at edge
-const MAX_TCA_S = 3600; // 1 hour
+const MAX_TCA_S = 21600; // 6 hours — crossing-orbit debris have TCAs of 2-14h
 
 /**
  * Derive a deterministic approach-vector angle from CDM properties.
@@ -109,10 +109,10 @@ export default function BullseyePlot() {
 
       // ── Concentric TCA rings (radial = time to closest approach) ──
       const rings = [
-        { s: 300, label: '5 min', color: '#ff335522' },
-        { s: 900, label: '15 min', color: '#ff664418' },
-        { s: 1800, label: '30 min', color: '#ffaa0010' },
-        { s: 3600, label: '60 min', color: '#00ff8808' },
+        { s: 1800, label: '30 min', color: '#ff335522' },
+        { s: 3600, label: '1 hr', color: '#ff664418' },
+        { s: 10800, label: '3 hr', color: '#ffaa0010' },
+        { s: 21600, label: '6 hr', color: '#00ff8808' },
       ];
 
       for (const ring of rings) {

@@ -171,22 +171,25 @@ class ConjunctionAssessor:
         logger.debug("CA Stage 2 (KDTree + Pair Filter): %.2fs, %d candidate pairs from %d unique debris", _t2 - _t1, len(candidate_pairs), len(deb_targets))
 
         # ── Performance guard: cap Stage-3 dense propagation load ─────────
-        # Dense DOP853 over 24h is O(6D) state variables; beyond ~1000 debris
+        # Dense DOP853 over 24h is O(6D) state variables; beyond ~2000 debris
         # the single batch call dominates wall-clock. Prioritise debris that
-        # appear in the most candidate pairs (highest threat multiplicity).
-        _MAX_DENSE_DEBRIS = 300
+        # are closest to any satellite (lowest initial distance), which ensures
+        # threat debris on crossing orbits are never dropped.
+        _MAX_DENSE_DEBRIS = 2000
         if len(deb_targets) > _MAX_DENSE_DEBRIS:
-            # Rank by pair count (most-connected debris first)
-            deb_pair_count: dict[str, int] = {}
-            for _, did in candidate_pairs:
-                deb_pair_count[did] = deb_pair_count.get(did, 0) + 1
-            ranked = sorted(deb_pair_count.keys(),
-                            key=lambda d: deb_pair_count[d], reverse=True)
+            # Rank by minimum initial distance to any satellite (closest first)
+            sat_pos_arr = np.array([sv[:3] for sv in sat_states.values()])
+            deb_min_dist: dict[str, float] = {}
+            for did, dsv in deb_targets.items():
+                dists = np.linalg.norm(sat_pos_arr - dsv[:3], axis=1)
+                deb_min_dist[did] = float(dists.min())
+            ranked = sorted(deb_min_dist.keys(),
+                            key=lambda d: deb_min_dist[d])
             keep = set(ranked[:_MAX_DENSE_DEBRIS])
             deb_targets = {d: deb_targets[d] for d in keep}
             candidate_pairs = [(s, d) for s, d in candidate_pairs if d in keep]
             logger.info("CA Stage 2.1 | Capped debris to %d (from %d) for dense prop",
-                        len(deb_targets), len(deb_pair_count))
+                        len(deb_targets), len(deb_min_dist))
 
         # ── Standard path: Dense propagation for TCA refinement ────────────
         # Batch-propagate every satellite with dense output
@@ -206,9 +209,10 @@ class ConjunctionAssessor:
         logger.debug("CA Stage 2.5 (dense prop): %.2fs for %d sats + %d debris", _t3 - _t2, len(sat_states), len(deb_targets))
 
         # ── Stage 3: Vectorized Coarse Sweep ─────────────────────────────────
-        # Evaluate distances on a coarse grid (every 600s) for ALL candidate pairs at once.
+        # Evaluate distances on a coarse grid for ALL candidate pairs at once.
+        # 200s spacing catches node-crossing debris (~75s windows from ±5° inc offset).
         # This keeps the hot path in NumPy and avoids millions of Python loop iterations.
-        grid_points = np.linspace(0.0, lookahead_s, int(lookahead_s / 600) + 1)
+        grid_points = np.linspace(0.0, lookahead_s, int(lookahead_s / 200) + 1)
         
         # Pre-evaluate all states on the grid
         all_sat_grid = sat_batch_sol(grid_points) # (S, 6, T)
