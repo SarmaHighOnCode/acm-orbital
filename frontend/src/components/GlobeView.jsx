@@ -563,7 +563,7 @@ function DebrisPoints() {
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" count={debrisCloud.length} array={positions} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial size={0.03} color="#7896b0" transparent opacity={0.35} sizeAttenuation depthWrite={false} />
+      <pointsMaterial size={1.5} color="#7896b0" transparent opacity={0.5} sizeAttenuation={false} depthWrite={false} />
     </points>
   );
 }
