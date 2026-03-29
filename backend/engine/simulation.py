@@ -140,6 +140,7 @@ class SimulationEngine:
         self.active_cdms: list[CDM] = []
         self.collision_log: deque[dict] = deque(maxlen=500)
         self.maneuver_log: deque[dict] = deque(maxlen=500)
+        self.total_maneuvers: int = 0
         self.collision_count: int = 0
         self.auto_step_enabled: bool = False
 
@@ -166,6 +167,7 @@ class SimulationEngine:
         self.active_cdms.clear()
         self.collision_log.clear()
         self.maneuver_log.clear()
+        self.total_maneuvers = 0
         self.collision_count = 0
         self.time_outside_box.clear()
         self._last_ca_scan_time = None
@@ -613,6 +615,7 @@ class SimulationEngine:
                     }
                     logger.info("MANEUVER | %s", json.dumps(log_entry))
                     self.maneuver_log.append(log_entry)
+                    self.total_maneuvers += 1
 
         # ── Step 3a: 24-hour CDM scan (uses final post-burn states) ──
         # Throttle expensive CA scans: only run if at least 60s of sim time elapsed
@@ -911,7 +914,7 @@ class SimulationEngine:
         """
         critical_groups: dict[str, list[CDM]] = {}
         for cdm in self.active_cdms:
-            if cdm.risk in ("CRITICAL", "RED"):
+            if cdm.risk in ("CRITICAL", "RED", "YELLOW"):
                 critical_groups.setdefault(cdm.satellite_id, []).append(cdm)
                 # If it's a Sat-vs-Sat conjunction, the "debris" side also needs to evaluate it
                 if cdm.debris_id in self.satellites:
@@ -962,105 +965,105 @@ class SimulationEngine:
                     current_time=current_time,
                 )
 
-            # LOS blackout guard: reschedule out-of-contact burns (PRD §4.4)
-            if burns:
-                max_dt = 0.0
-                for burn in burns:
-                    bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
-                    dt = (bt - current_time).total_seconds()
-                    if dt > max_dt: max_dt = dt
-                
-                if max_dt > 0:
-                    dense_sol = self.propagator.propagate_dense(sat.state_vector, max_dt)
-                else:
-                    def _fallback_dense_sol(t):
-                        return sat.state_vector
-                    dense_sol = _fallback_dense_sol
+                # LOS blackout guard: reschedule out-of-contact burns (PRD §4.4)
+                if burns:
+                    max_dt = 0.0
+                    for burn in burns:
+                        bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
+                        dt = (bt - current_time).total_seconds()
+                        if dt > max_dt: max_dt = dt
+                    
+                    if max_dt > 0:
+                        dense_sol = self.propagator.propagate_dense(sat.state_vector, max_dt)
+                    else:
+                        def _fallback_dense_sol(t):
+                            return sat.state_vector
+                        dense_sol = _fallback_dense_sol
 
-                for burn in burns:
-                    bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
-                    def has_los_at(t_check: datetime) -> bool:
-                        dt_check = (t_check - current_time).total_seconds()
-                        pos = dense_sol(dt_check)[:3] if dt_check > 0 else sat.position
-                        return self.gs_network.check_line_of_sight(pos, t_check)
+                    for burn in burns:
+                        bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
+                        def has_los_at(t_check: datetime) -> bool:
+                            dt_check = (t_check - current_time).total_seconds()
+                            pos = dense_sol(dt_check)[:3] if dt_check > 0 else sat.position
+                            return self.gs_network.check_line_of_sight(pos, t_check)
 
-                    if not has_los_at(bt):
-                        # 1. Try moving the burn EARLIER towards the signal latency limit
-                        earliest = current_time + timedelta(seconds=SIGNAL_LATENCY_S)
-                        test_bt = bt - timedelta(seconds=10)
-                        found_los = False
-                        while test_bt >= earliest:
-                            if has_los_at(test_bt):
-                                burn["burnTime"] = test_bt.isoformat()
-                                bt = test_bt
-                                found_los = True
-                                break
-                            test_bt -= timedelta(seconds=10)
-                        
-                        # 2. If still no LOS, try moving it LATER towards TCA
-                        if not found_los:
-                            # Handle both string and datetime TCA objects
-                            tca_val = most_critical.tca
-                            if isinstance(tca_val, str):
-                                tca_dt = datetime.fromisoformat(tca_val.replace("Z", "+00:00"))
-                            else:
-                                tca_dt = tca_val
-                            
-                            latest = min(bt + timedelta(seconds=1800), tca_dt - timedelta(seconds=30))
-                            test_bt = bt + timedelta(seconds=10)
-                            while test_bt <= latest:
+                        if not has_los_at(bt):
+                            # 1. Try moving the burn EARLIER towards the signal latency limit
+                            earliest = current_time + timedelta(seconds=SIGNAL_LATENCY_S)
+                            test_bt = bt - timedelta(seconds=10)
+                            found_los = False
+                            while test_bt >= earliest:
                                 if has_los_at(test_bt):
                                     burn["burnTime"] = test_bt.isoformat()
                                     bt = test_bt
                                     found_los = True
                                     break
-                                test_bt += timedelta(seconds=10)
+                                test_bt -= timedelta(seconds=10)
+                            
+                            # 2. If still no LOS, try moving it LATER towards TCA
+                            if not found_los:
+                                # Handle both string and datetime TCA objects
+                                tca_val = most_critical.tca
+                                if isinstance(tca_val, str):
+                                    tca_dt = datetime.fromisoformat(tca_val.replace("Z", "+00:00"))
+                                else:
+                                    tca_dt = tca_val
+                                
+                                latest = min(bt + timedelta(seconds=1800), tca_dt - timedelta(seconds=30))
+                                test_bt = bt + timedelta(seconds=10)
+                                while test_bt <= latest:
+                                    if has_los_at(test_bt):
+                                        burn["burnTime"] = test_bt.isoformat()
+                                        bt = test_bt
+                                        found_los = True
+                                        break
+                                    test_bt += timedelta(seconds=10)
 
-                        if not found_los:
-                            burn["_skip"] = True
+                            if not found_los:
+                                burn["_skip"] = True
 
-            # Cooldown enforcement: auto-planned burns must respect the 600s rule
-            effective_last_auto: datetime | None = sat.last_burn_time
-            if sat.maneuver_queue:
-                last_queued = max(
-                    datetime.fromisoformat(b["burnTime"].replace("Z", "+00:00"))
-                    for b in sat.maneuver_queue
-                )
-                if effective_last_auto is None or last_queued > effective_last_auto:
-                    effective_last_auto = last_queued
+                # Cooldown enforcement: auto-planned burns must respect the 600s rule
+                effective_last_auto: datetime | None = sat.last_burn_time
+                if sat.maneuver_queue:
+                    last_queued = max(
+                        datetime.fromisoformat(b["burnTime"].replace("Z", "+00:00"))
+                        for b in sat.maneuver_queue
+                    )
+                    if effective_last_auto is None or last_queued > effective_last_auto:
+                        effective_last_auto = last_queued
 
-            validated_burns: list[dict] = []
-            for burn in burns:
-                if burn.get("_skip"):
-                    continue
-                bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
-                if effective_last_auto is not None:
-                    cooldown_gap = (bt - effective_last_auto).total_seconds()
-                    if cooldown_gap < THRUSTER_COOLDOWN_S:
-                        # Shift burn forward to satisfy cooldown constraint
-                        bt = effective_last_auto + timedelta(seconds=THRUSTER_COOLDOWN_S + 1)
-                        burn["burnTime"] = bt.isoformat()
-                validated_burns.append(burn)
-                effective_last_auto = bt
+                validated_burns: list[dict] = []
+                for burn in burns:
+                    if burn.get("_skip"):
+                        continue
+                    bt = datetime.fromisoformat(burn["burnTime"].replace("Z", "+00:00"))
+                    if effective_last_auto is not None:
+                        cooldown_gap = (bt - effective_last_auto).total_seconds()
+                        if cooldown_gap < THRUSTER_COOLDOWN_S:
+                            # Shift burn forward to satisfy cooldown constraint
+                            bt = effective_last_auto + timedelta(seconds=THRUSTER_COOLDOWN_S + 1)
+                            burn["burnTime"] = bt.isoformat()
+                    validated_burns.append(burn)
+                    effective_last_auto = bt
 
-            if validated_burns:
-                sat.maneuver_queue.extend(validated_burns)
-                sat.status = "EVADING"
-                logger.info(
-                    "AUTO-PLAN | %s | Planned evasion for (%s) miss=%.4f km",
-                    sat_id, target.id, most_critical.miss_distance_km
-                )
-                planned_any = True
-                
-            elif burns:
-                # Evasion was planned but all burns were skipped due to LOS blackout
-                logger.critical(
-                    "UNRESOLVABLE | %s | Collision with %s at %s - No LOS available for mandatory evasion",
-                    sat_id, target.id, 
-                    most_critical.tca.isoformat() if hasattr(most_critical.tca, 'isoformat') else most_critical.tca
-                )
-                
-            if planned_any: break  # Only fully plan for one threat segment; queue rest later if needed.
+                if validated_burns:
+                    sat.maneuver_queue.extend(validated_burns)
+                    sat.status = "EVADING"
+                    logger.info(
+                        "AUTO-PLAN | %s | Planned evasion for (%s) miss=%.4f km",
+                        sat_id, target.id, most_critical.miss_distance_km
+                    )
+                    planned_any = True
+                    
+                elif burns:
+                    # Evasion was planned but all burns were skipped due to LOS blackout
+                    logger.critical(
+                        "UNRESOLVABLE | %s | Collision with %s at %s - No LOS available for mandatory evasion",
+                        sat_id, target.id, 
+                        most_critical.tca.isoformat() if hasattr(most_critical.tca, 'isoformat') else most_critical.tca
+                    )
+                    
+                if planned_any: break  # Only fully plan for one threat segment; queue rest later if needed.
 
     def get_snapshot(self) -> dict:
         """Return the current simulation state for frontend rendering.
@@ -1140,6 +1143,7 @@ class SimulationEngine:
             "maneuver_queue_depth": total_queued,
             "cdms":                cdm_list,
             "maneuver_log":        list(self.maneuver_log)[-50:],  # Last 50 events
+            "total_maneuvers":     self.total_maneuvers,
             "collision_count":     self.collision_count,
             "auto_step_enabled":   self.auto_step_enabled,
             "fleet_uptime_score":  fleet_uptime_score,

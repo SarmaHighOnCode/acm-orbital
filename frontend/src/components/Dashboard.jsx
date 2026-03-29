@@ -309,7 +309,7 @@ function MissionReportModal({ onClose }) {
 }
 
 export default function Dashboard() {
-  const { timestamp, activeCdmCount, satellites, debrisCloud, collisionCount, maneuverQueueDepth, maneuverLog, cdms, error, connected, fleetUptimeScore, totalDeltaVms, autoStepEnabled, kesslerData } =
+  const { timestamp, activeCdmCount, satellites, debrisCloud, collisionCount, maneuverQueueDepth, maneuverLog, totalManeuvers, cdms, error, connected, fleetUptimeScore, totalDeltaVms, autoStepEnabled, kesslerData } =
     useStore();
   const [view, setView] = useState('2d');
   const [showPhysicsProof, setShowPhysicsProof] = useState(false);
@@ -342,7 +342,7 @@ export default function Dashboard() {
   const nominalCount = satellites.filter((s) => s.status === 'NOMINAL').length;
   const uptimePct = (fleetUptimeScore * 100).toFixed(0);
   const totalDv = totalDeltaVms;
-  const evasions = maneuverLog.length;
+  const evasions = totalManeuvers !== undefined && totalManeuvers > 0 ? totalManeuvers : maneuverLog.length;
   const safetyScore = evasions + collisionCount > 0
     ? ((evasions / (evasions + collisionCount)) * 100).toFixed(0)
     : '100';

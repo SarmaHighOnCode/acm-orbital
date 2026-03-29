@@ -25,6 +25,7 @@ const useStore = create((set, get) => ({
   // Extended data from backend
   cdms: [],
   maneuverLog: [],
+  totalManeuvers: 0,
   collisionCount: 0,
   fleetUptimeScore: 1.0,
   totalDeltaVms: 0,
@@ -71,6 +72,7 @@ const useStore = create((set, get) => ({
         maneuverQueueDepth: snapshot.maneuver_queue_depth || 0,
         cdms: snapshot.cdms || [],
         maneuverLog: snapshot.maneuver_log || [],
+        totalManeuvers: snapshot.total_maneuvers || 0,
         collisionCount: snapshot.collision_count || 0,
         fleetUptimeScore: snapshot.fleet_uptime_score ?? 1.0,
         totalDeltaVms: snapshot.total_delta_v_ms ?? 0,
