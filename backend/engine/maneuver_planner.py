@@ -202,9 +202,9 @@ class ManeuverPlanner:
         best_burn_time = None
         best_dv_ms = float('inf')
 
-        # Search window: TCA-3h to TCA-10min, 5-min steps (36 candidates)
-        search_start = max(earliest_burn_time, tca - timedelta(seconds=10800))
-        search_end   = tca - timedelta(seconds=600)
+        # Search window: from earliest possible up to 2 hours, 5-min steps
+        search_start = earliest_burn_time
+        search_end   = min(search_start + timedelta(seconds=7200), tca - timedelta(seconds=600))
 
         if search_end < search_start:
             search_end = earliest_burn_time

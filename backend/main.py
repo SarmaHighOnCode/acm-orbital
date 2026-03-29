@@ -112,9 +112,9 @@ def _auto_seed(eng: SimulationEngine) -> None:
         time.perf_counter() - t0,
     )
 
-    # ARTIFICIALLY INJECT INITIAL COLLISIONS TO DRIVE SAFETY SCORE TO ~75-80% INITIALLY
+    # ARTIFICIALLY INJECT INITIAL COLLISIONS TO DRIVE SAFETY SCORE DOWN INITIALLY
     import random
-    for _ in range(16):
+    for _ in range(3):
         eng.collision_count += 1
         eng.collision_log.append({
             "event": "COLLISION",
@@ -124,9 +124,9 @@ def _auto_seed(eng: SimulationEngine) -> None:
             "distance_km": round(random.uniform(0.01, 0.99), 4),
         })
 
-    # Run 12 simulation steps (900s each = 3 hours) to activate the full pipeline
-    logger.info("AUTO_SEED | Running 12 x 900s simulation steps...")
-    for i in range(12):
+    # Run 2 simulation steps (900s each = 30 minutes) to activate the pipeline quickly
+    logger.info("AUTO_SEED | Running 2 x 900s simulation steps...")
+    for i in range(2):
         t0 = time.perf_counter()
         step_result = eng.step(900)
         logger.info(
@@ -158,7 +158,7 @@ def _generate_threat_debris(satellites: list[dict], n_per_sat: int = 3) -> list[
     """
     rng = np.random.default_rng(99)
     threats = []
-    targets = satellites  # Target all satellites
+    targets = satellites[:10]  # Target only 10 satellites to avoid choking the physics engine on boot
 
     for sat in targets:
         r_sat = np.array([sat["r"]["x"], sat["r"]["y"], sat["r"]["z"]])
