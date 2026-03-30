@@ -60,11 +60,11 @@ function geoToCartesian(lat, lon, altKm) {
   const r = (R_EARTH_KM + altKm) * SCALE_FACTOR;
   const latRad = lat * DEG2RAD;
   const lonRad = lon * DEG2RAD;
-  // Standard Three.js Earth ECEF mapping aligns Greenwich (lon=0) to -Z and longitude wrapping correctly.
+  // Three.js SphereGeometry U=0.5 (Greenwich) is X=1, Z=0. U=0.75 (India) is X=0, Z=-1.
   return new THREE.Vector3(
-    -r * Math.cos(latRad) * Math.sin(lonRad),
+    r * Math.cos(latRad) * Math.cos(lonRad),
     r * Math.sin(latRad),
-    -r * Math.cos(latRad) * Math.cos(lonRad)
+    -r * Math.cos(latRad) * Math.sin(lonRad)
   );
 }
 
