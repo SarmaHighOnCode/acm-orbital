@@ -22,11 +22,12 @@ function sunDirection(timestamp) {
   );
   const declRad = -23.44 * DEG2RAD * Math.cos((2 * Math.PI * (dayOfYear + 10)) / 365);
   const utcHours = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+  // Hour angle: 0 at UTC noon. Positive means sun is moving West.
   const haRad = ((utcHours / 24) * 360 - 180) * DEG2RAD;
   return new THREE.Vector3(
-    Math.cos(declRad) * Math.cos(haRad),
+    Math.cos(declRad) * Math.sin(haRad),
     Math.sin(declRad),
-    Math.cos(declRad) * Math.sin(haRad)
+    -Math.cos(declRad) * Math.cos(haRad)
   );
 }
 
@@ -59,12 +60,11 @@ function geoToCartesian(lat, lon, altKm) {
   const r = (R_EARTH_KM + altKm) * SCALE_FACTOR;
   const latRad = lat * DEG2RAD;
   const lonRad = lon * DEG2RAD;
-  // Three.js SphereGeometry maps lon=90°E to -Z (z = R*sin(phi) where phi=(lon+180°)),
-  // so geographic z must be negated to match sphere UV orientation.
+  // Standard Three.js Earth ECEF mapping aligns Greenwich (lon=0) to -Z and longitude wrapping correctly.
   return new THREE.Vector3(
-    r * Math.cos(latRad) * Math.cos(lonRad),
+    -r * Math.cos(latRad) * Math.sin(lonRad),
     r * Math.sin(latRad),
-    -r * Math.cos(latRad) * Math.sin(lonRad)
+    -r * Math.cos(latRad) * Math.cos(lonRad)
   );
 }
 
@@ -86,12 +86,6 @@ function Earth() {
       tex.colorSpace = THREE.SRGBColorSpace;
     });
   }, [dayMap, nightMap]);
-
-  useFrame(() => {
-    if (!meshRef.current) return;
-    const rot = gmstRotation(timestamp);
-    meshRef.current.rotation.y = -rot - Math.PI / 2;
-  });
 
   return (
     <mesh ref={meshRef}>
@@ -146,11 +140,10 @@ function CloudLayer() {
     return tex;
   }, []);
 
-  useFrame(() => {
+  useFrame(({ clock }) => {
     if (!meshRef.current) return;
-    const rot = gmstRotation(timestamp);
-    // Clouds rotate slightly slower than Earth (wind drift effect)
-    meshRef.current.rotation.y = -rot - Math.PI / 2 + 0.02;
+    // Clouds rotate slightly over time for visual effect
+    meshRef.current.rotation.y = clock.getElapsedTime() * 0.005;
   });
 
   return (
@@ -624,18 +617,8 @@ function GroundStationMarker({ gs }) {
 }
 
 function GroundStationMarkers() {
-  const groupRef = useRef();
-  const timestamp = useStore((s) => s.timestamp);
-
-  // Rotate ground stations with the Earth (same GMST rotation as Earth mesh)
-  useFrame(() => {
-    if (!groupRef.current) return;
-    const rot = gmstRotation(timestamp);
-    groupRef.current.rotation.y = -rot - Math.PI / 2;
-  });
-
   return (
-    <group ref={groupRef}>
+    <group>
       {GROUND_STATIONS.map((gs) => <GroundStationMarker key={gs.id} gs={gs} />)}
     </group>
   );
