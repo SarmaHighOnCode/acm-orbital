@@ -18,8 +18,6 @@ from fastapi.responses import ORJSONResponse
 logger = logging.getLogger("acm.api.visualization")
 router = APIRouter(tags=["visualization"])
 
-# Global start time for safety score progression
-_APP_START_TIME = _time.time()
 
 def _get_engine(request: Request):
     return request.app.state.engine
@@ -232,15 +230,7 @@ async def mission_report(request: Request):
         evasion_count = len(engine.maneuver_log)
         collision_count_snap = engine.collision_count
 
-    # Calculate time-based synthetic safety score
-    # Starts at 70, reaches 90 in 2 mins, reaches 100 in further 8 mins (10 mins total)
-    elapsed = _time.time() - _APP_START_TIME
-    if elapsed <= 120:
-        safety_score = 70.0 + (20.0 * (elapsed / 120.0))
-    elif elapsed <= 600:
-        safety_score = 90.0 + (10.0 * ((elapsed - 120.0) / 480.0))
-    else:
-        safety_score = 100.0
+    safety_score = (evasion_count / (evasion_count + collision_count_snap) * 100) if (evasion_count + collision_count_snap) > 0 else 100.0
 
     return {
         "mission": "ACM-Orbital Autonomous Constellation Manager",
