@@ -11,9 +11,10 @@ ENV PYTHONUNBUFFERED=1
 
 # ── Phase 1: System Dependencies ──────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3.11-distutils \
+    python3.11 python3.11-venv \
     curl ca-certificates \
-    && curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.11 - \
+    && python3.11 -m ensurepip --upgrade \
+    && python3.11 -m pip install --upgrade pip \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
