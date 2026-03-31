@@ -617,11 +617,9 @@ function GroundStationMarker({ gs }) {
 }
 
 function GroundStationMarkers() {
-  return (
-    <group>
-      {GROUND_STATIONS.map((gs) => <GroundStationMarker key={gs.id} gs={gs} />)}
-    </group>
-  );
+  // Ground stations are rendered inside EarthGroup so they are children of the
+  // same <group> as the Earth mesh and rotate / translate together.
+  return GROUND_STATIONS.map((gs) => <GroundStationMarker key={gs.id} gs={gs} />);
 }
 
 /* ── CDM threat lines (pulsing for CRITICAL) ───────────── */
@@ -753,7 +751,11 @@ export default function GlobeView() {
       {/* Stars — denser for depth */}
       <Stars radius={250} depth={80} count={7000} factor={4} fade speed={0.3} />
 
-      <Earth />
+      {/* Earth + ground stations share one group so stations are rigidly attached */}
+      <group>
+        <Earth />
+        <GroundStationMarkers />
+      </group>
       <CloudLayer />
       <Atmosphere />
 
@@ -772,7 +774,6 @@ export default function GlobeView() {
       <PredictedTrajectory />
 
       <DebrisPoints />
-      <GroundStationMarkers />
       <CDMLines />
       <HUDOverlay />
 
