@@ -564,11 +564,24 @@ function DebrisPoints() {
 /* ── Ground station 3D markers ─────────────────────────── */
 function GroundStationMarker({ gs }) {
   const pulsRef = useRef();
+  const groupRef = useRef();
+  const { camera } = useThree();
+  const [visible, setVisible] = React.useState(true);
 
   useFrame(({ clock }) => {
     if (!pulsRef.current) return;
     const s = 1 + 0.35 * Math.abs(Math.sin(clock.getElapsedTime() * 1.4));
     pulsRef.current.scale.setScalar(s);
+
+    // Manual front-face check: show label only when station faces camera
+    if (groupRef.current) {
+      const worldPos = new THREE.Vector3();
+      groupRef.current.getWorldPosition(worldPos);
+      const normal = worldPos.clone().normalize();
+      const toCamera = camera.position.clone().sub(worldPos).normalize();
+      const dot = normal.dot(toCamera);
+      setVisible(dot > 0.15);
+    }
   });
 
   const surfacePos = useMemo(() => {
@@ -584,7 +597,7 @@ function GroundStationMarker({ gs }) {
   , [surfacePos]);
 
   return (
-    <group position={surfacePos.toArray()} quaternion={quaternion.toArray()}>
+    <group ref={groupRef} position={surfacePos.toArray()} quaternion={quaternion.toArray()}>
       <mesh>
         <circleGeometry args={[0.065, 18]} />
         <meshBasicMaterial color="#fbbf24" transparent opacity={0.75} side={THREE.DoubleSide} depthWrite={false} />
@@ -597,21 +610,23 @@ function GroundStationMarker({ gs }) {
         <ringGeometry args={[0.08, 0.115, 22]} />
         <meshBasicMaterial color="#fbbf24" transparent opacity={0.50} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
-        <Html occlude="blending" position={[0, 0.38, 0]} center style={{ pointerEvents: 'none' }}>
-        <div style={{
-          color: '#fde68a',
-          fontSize: '9px',
-          fontFamily: 'JetBrains Mono, monospace',
-          background: 'rgba(5, 8, 18, 0.88)',
-          padding: '2px 6px',
-          borderRadius: '3px',
-          border: '1px solid #fbbf2450',
-          whiteSpace: 'nowrap',
-          boxShadow: '0 0 7px #fbbf2440',
-        }}>
-          {gs.name}
-        </div>
-      </Html>
+      {visible && (
+        <Html position={[0, 0.38, 0]} center style={{ pointerEvents: 'none' }}>
+          <div style={{
+            color: '#fde68a',
+            fontSize: '9px',
+            fontFamily: 'JetBrains Mono, monospace',
+            background: 'rgba(5, 8, 18, 0.88)',
+            padding: '2px 6px',
+            borderRadius: '3px',
+            border: '1px solid #fbbf2450',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 0 7px #fbbf2440',
+          }}>
+            {gs.name}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
