@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 python3.11-venv \
     curl ca-certificates \
     && python3.11 -m ensurepip --upgrade \
-    && python3.11 -m pip install --upgrade pip \
+    && python3.11 -m pip install --upgrade pip --break-system-packages \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -26,7 +26,7 @@ WORKDIR /app
 RUN useradd -m appuser
 
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN python3.11 -m pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN python3.11 -m pip install --no-cache-dir --break-system-packages -r /app/backend/requirements.txt
 
 COPY backend/ /app/backend/
 
