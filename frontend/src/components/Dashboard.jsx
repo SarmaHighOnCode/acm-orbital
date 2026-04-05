@@ -332,6 +332,20 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Handle 'i' / 'I' keyboard shortcut for manual step
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger if the user is typing in the search input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        manualStep();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const filteredSats = satSearch.trim()
     ? satellites.filter((s) => s.id.toLowerCase().includes(satSearch.toLowerCase()))
     : satellites;
