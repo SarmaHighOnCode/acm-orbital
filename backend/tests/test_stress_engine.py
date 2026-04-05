@@ -23,13 +23,16 @@ def test_stress_simulation_engine_capacity():
             "v": {"x": 0.0, "y": 7.5, "z": 0.0}
         })
         
-    # 2. Initialize 10,000 debris objects
-    # Spread them out to trigger spatial index but not all of them collide
+    # 2. Initialize 10,000 debris objects spread across LEO (200–2000 km).
+    # Realistic distribution: only ~15% share the satellite altitude band,
+    # so Stage 1 altitude filter eliminates the rest before KDTree build.
     for i in range(10000):
+        # Spread radii from 6578 km (200 km alt) to 8378 km (2000 km alt)
+        r_base = 6578.0 + (i % 1800)  # 1800 km spread across LEO
         telemetry_objects.append({
             "id": f"DEB-{i:05d}",
             "type": "DEBRIS",
-            "r": {"x": 7000.0 + (i % 100), "y": (i % 100) * 10, "z": (i % 10) * 10},
+            "r": {"x": r_base, "y": (i % 200) * 5, "z": (i % 50) * 5},
             "v": {"x": 0.0, "y": 7.5, "z": 0.0}
         })
         

@@ -629,19 +629,11 @@ class SimulationEngine:
 
         if scan_needed:
             sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
-            # Adaptive lookahead: full 24h window for ≤2K debris (PRD §3.3).
-            # Graceful degradation for larger counts to stay within real-time budget.
-            _step_n_deb = len(self.debris)
-            if _step_n_deb <= 2000:
-                _step_lookahead = LOOKAHEAD_SECONDS       # 24h — full compliance
-            elif _step_n_deb <= 10000:
-                _step_lookahead = 14400.0                 # 4h — still catches most conjunctions
-            elif _step_n_deb <= 50000:
-                _step_lookahead = 7200.0                  # 2h
-            elif _step_n_deb <= 100000:
-                _step_lookahead = 3600.0                  # 1h
-            else:
-                _step_lookahead = 1800.0                  # 30min — survival mode
+            # Full 24h lookahead for all debris counts (PRD §3.3 — mandatory).
+            # The 4-stage KDTree pipeline keeps this tractable: Stage 1 altitude
+            # filter eliminates ~85% of debris, Stage 2.1 caps dense propagation
+            # at 2000 objects, so wall-clock scales with candidates not total debris.
+            _step_lookahead = LOOKAHEAD_SECONDS
             self.active_cdms = self.assessor.assess(
                 sat_states_snapshot,
                 {d.id: d.state_vector for d in self.debris.values()},
