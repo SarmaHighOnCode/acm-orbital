@@ -40,6 +40,7 @@ from config import (
     R_EARTH,
     RTOL,
     ATOL,
+    LOOKAHEAD_SECONDS,
 )
 from engine.models import Satellite, Debris, CDM
 from engine.propagator import OrbitalPropagator
@@ -626,10 +627,10 @@ class SimulationEngine:
 
         if scan_needed:
             sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
-            # Adaptive lookahead: 4h window up to 50K debris to improve tick rate.
-            # 14400.0 = 4 hours, enough time for CA and Maneuver planning algorithm.
+            # Adaptive lookahead: full 24h window up to 50K debris (PRD §3.3).
+            # Throttle to 7200/1800 only for extreme debris counts (>50K).
             _step_n_deb = len(self.debris)
-            _step_lookahead = 14400.0 if _step_n_deb <= 50000 else (
+            _step_lookahead = LOOKAHEAD_SECONDS if _step_n_deb <= 50000 else (
                 7200.0 if _step_n_deb <= 100000 else 1800.0
             )
             self.active_cdms = self.assessor.assess(

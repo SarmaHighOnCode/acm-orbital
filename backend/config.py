@@ -31,6 +31,24 @@ STATION_KEEPING_RADIUS_KM: float = 10.0  # km — nominal slot bounding sphere
 EOL_FUEL_THRESHOLD_KG: float = 2.5    # kg — 5% of 50 kg → graveyard orbit trigger
 LOOKAHEAD_HOURS: float = 24.0         # hours — conjunction prediction window
 
+# ── Collision Assessment Tuning ──────────────────────────────────────────
+CA_KDTREE_RADIUS_MAX_KM: float = 2000.0   # km — KDTree search radius cap
+CA_KDTREE_RADIUS_MIN_KM: float = 200.0    # km — KDTree search radius floor
+CA_MAX_DENSE_DEBRIS: int = 2000            # Max debris for Stage-3 dense propagation
+CA_COARSE_GRID_SPACING_S: float = 200.0    # seconds — coarse sweep grid spacing
+CA_THREATENING_DIST_KM: float = 50.0       # km — threshold for Stage-4 TCA refinement
+CA_SAT_VS_SAT_RADIUS_KM: float = 2000.0   # km — KDTree radius for sat-vs-sat checks
+CA_MULTISTART_WINDOW_S: float = 14400.0    # seconds — 4h multi-start Brent window
+
+# ── Kessler Risk Assessment ─────────────────────────────────────────────
+KESSLER_SHELL_WIDTH_KM: float = 50.0       # km — altitude band width per shell
+KESSLER_MIN_ALT_KM: float = 200.0          # km — lowest LEO shell
+KESSLER_MAX_ALT_KM: float = 2000.0         # km — highest LEO shell
+KESSLER_AVG_CROSS_SECTION_M2: float = 10.0 # m² — average collision cross-section
+KESSLER_AVG_REL_VELOCITY_KMS: float = 10.0 # km/s — average LEO relative velocity
+KESSLER_ASSESSMENT_WINDOW_S: float = 86400.0  # seconds — 24h risk window
+KESSLER_NASA_CRITICAL_DENSITY: float = 1.0e-8 # objects/km³ — NASA stability threshold
+
 # ── Derived Constants (computed once) ────────────────────────────────────
 G0_KM: float = G0 * 1e-3              # km/s² — standard gravity in km units
 LOOKAHEAD_SECONDS: float = LOOKAHEAD_HOURS * 3600.0  # seconds

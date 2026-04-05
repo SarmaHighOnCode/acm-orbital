@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 
 import numpy as np
 
+from config import M_FUEL_INIT, M_DRY
+
 
 @dataclass
 class OrbitalObject:
@@ -43,8 +45,8 @@ class OrbitalObject:
 class Satellite(OrbitalObject):
     """A satellite in the constellation."""
     obj_type: str = "SATELLITE"
-    fuel_kg: float = 50.0                  # Current propellant mass
-    dry_mass_kg: float = 500.0             # Empty satellite mass
+    fuel_kg: float = M_FUEL_INIT            # Current propellant mass
+    dry_mass_kg: float = M_DRY             # Empty satellite mass
     nominal_state: np.ndarray = field(default_factory=lambda: np.zeros(6))
     status: str = "NOMINAL"                # NOMINAL | EVADING | RECOVERING | EOL
     last_burn_time: datetime | None = None # For 600s cooldown enforcement

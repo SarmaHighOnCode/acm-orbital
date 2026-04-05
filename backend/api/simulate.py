@@ -62,4 +62,4 @@ async def toggle_autostep(
     async with request.app.state.engine_lock:
         engine.auto_step_enabled = payload.enabled
     logger.info("SIMULATE | Auto-step enabled set to: %s", payload.enabled)
-    return {"status": "SUCCESS", "auto_step_enabled": getattr(engine, "auto_step_enabled", payload.enabled)}
+    return {"status": "AUTO_STEP_UPDATED", "auto_step_enabled": getattr(engine, "auto_step_enabled", payload.enabled)}

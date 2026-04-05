@@ -33,7 +33,13 @@ import numpy as np
 from scipy.spatial import KDTree
 from scipy.optimize import minimize_scalar
 
-from config import CONJUNCTION_THRESHOLD_KM, LOOKAHEAD_SECONDS, MU_EARTH
+from config import (
+    CONJUNCTION_THRESHOLD_KM, LOOKAHEAD_SECONDS, MU_EARTH,
+    CA_KDTREE_RADIUS_MAX_KM, CA_KDTREE_RADIUS_MIN_KM,
+    CA_MAX_DENSE_DEBRIS, CA_COARSE_GRID_SPACING_S,
+    CA_THREATENING_DIST_KM, CA_SAT_VS_SAT_RADIUS_KM,
+    CA_MULTISTART_WINDOW_S,
+)
 from engine.models import CDM
 from engine.propagator import OrbitalPropagator
 
@@ -145,7 +151,7 @@ class ConjunctionAssessor:
         # orbital-element filters (Stage 1 altitude band + per-pair shell)
         # for correctness.  Cap at 2000 km to keep the KDTree useful as a
         # spatial index (LEO orbit diameter ≈ 13 000 km).
-        kdtree_radius = max(200.0, min(15.0 * lookahead_s, 2000.0))
+        kdtree_radius = max(CA_KDTREE_RADIUS_MIN_KM, min(15.0 * lookahead_s, CA_KDTREE_RADIUS_MAX_KM))
 
         for sat_id, sat_state in sat_states.items():
             # query_ball_point eliminates debris far from initial satellite position
@@ -175,7 +181,7 @@ class ConjunctionAssessor:
         # the single batch call dominates wall-clock. Prioritise debris that
         # are closest to any satellite (lowest initial distance), which ensures
         # threat debris on crossing orbits are never dropped.
-        _MAX_DENSE_DEBRIS = 2000
+        _MAX_DENSE_DEBRIS = CA_MAX_DENSE_DEBRIS
         if len(deb_targets) > _MAX_DENSE_DEBRIS:
             # Rank by minimum initial distance to any satellite (closest first)
             sat_pos_arr = np.array([sv[:3] for sv in sat_states.values()])
@@ -212,7 +218,7 @@ class ConjunctionAssessor:
         # Evaluate distances on a coarse grid for ALL candidate pairs at once.
         # 200s spacing catches node-crossing debris (~75s windows from ±5° inc offset).
         # This keeps the hot path in NumPy and avoids millions of Python loop iterations.
-        grid_points = np.linspace(0.0, lookahead_s, int(lookahead_s / 200) + 1)
+        grid_points = np.linspace(0.0, lookahead_s, int(lookahead_s / CA_COARSE_GRID_SPACING_S) + 1)
         
         # Pre-evaluate all states on the grid
         all_sat_grid = sat_batch_sol(grid_points) # (S, 6, T)
@@ -232,7 +238,7 @@ class ConjunctionAssessor:
         dist_grid = np.sqrt(dist_sq_grid)
         
         # Identify pairs/windows that drop below 50km
-        threatening_mask = np.any(dist_grid < 50.0, axis=1)
+        threatening_mask = np.any(dist_grid < CA_THREATENING_DIST_KM, axis=1)
         
         # ── Stage 4: Refined TCA + CDM Emission ──────────────────────────────
         threatening_indices = np.where(threatening_mask)[0]
@@ -241,7 +247,7 @@ class ConjunctionAssessor:
             sat_id, deb_id = candidate_pairs[k_idx]
             
             # Refine only the specific 10-minute windows that looked risky
-            risky_windows = np.where(dist_grid[k_idx] < 50.0)[0]
+            risky_windows = np.where(dist_grid[k_idx] < CA_THREATENING_DIST_KM)[0]
             
             # Group adjacent risky grid points into windows
             processed_time = -1.0
@@ -355,7 +361,7 @@ class ConjunctionAssessor:
 
         for i, s1_id in enumerate(sat_ids):
             # Only check against satellites with higher index to avoid double-counting
-            neighbor_indices = tree.query_ball_point(sat_positions[i], r=2000.0)
+            neighbor_indices = tree.query_ball_point(sat_positions[i], r=CA_SAT_VS_SAT_RADIUS_KM)
             
             s1_rp = rp_dict[s1_id] - 5.0
             s1_ra = ra_dict[s1_id] + 5.0
@@ -393,7 +399,7 @@ class ConjunctionAssessor:
 
             # Multi-window search to avoid local minima in highly curved orbits
             # Split 24h into 4-hour chunks
-            _window_size = 14400.0
+            _window_size = CA_MULTISTART_WINDOW_S
             for t_start in np.arange(0.0, lookahead_s, _window_size):
                 t_end = min(t_start + _window_size, lookahead_s)
                 res = minimize_scalar(dist_fn, bounds=(t_start, t_end), method="bounded")

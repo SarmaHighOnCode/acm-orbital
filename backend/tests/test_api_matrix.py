@@ -122,7 +122,7 @@ def test_maneuver_dv_magnitudes(client, dv):
             "deltaV_vector": {"x": dv, "y": 0, "z": 0},
         }]
     })
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     assert resp.json()["status"] in ("SCHEDULED", "REJECTED")
 
 DV_DIRECTIONS = [
@@ -147,7 +147,7 @@ def test_maneuver_directions(client, name, dv_vec):
             "deltaV_vector": dv_vec,
         }]
     })
-    assert resp.status_code == 200
+    assert resp.status_code == 202
 
 BURN_TIMES = [
     "2026-03-21T12:00:15+00:00",  # 15s from now
@@ -171,7 +171,7 @@ def test_maneuver_burn_times(client, burn_time):
             "deltaV_vector": {"x": 0.003, "y": 0, "z": 0},
         }]
     })
-    assert resp.status_code == 200
+    assert resp.status_code == 202
 
 MULTI_BURN_COUNTS = [1, 2, 3, 5]
 
@@ -189,7 +189,7 @@ def test_maneuver_multi_burn_sequence(client, n_burns):
         "satelliteId": sid,
         "maneuver_sequence": seq,
     })
-    assert resp.status_code == 200
+    assert resp.status_code == 202
 
 
 # ═══════════════════════════════════════════════════════════════════════════
