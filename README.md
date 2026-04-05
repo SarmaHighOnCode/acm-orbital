@@ -10,11 +10,7 @@ J2-perturbed DOP853 orbital propagation | 4-stage KDTree conjunction assessment 
 [![Three.js](https://img.shields.io/badge/Three.js-WebGL-000000?logo=three.js&logoColor=white)](https://threejs.org)
 [![Docker](https://img.shields.io/badge/Docker-ubuntu:22.04-2496ED?logo=docker&logoColor=white)](https://docker.com)
 
-**[Technical Report (PDF)](docs/Technical%20Report.pdf)** | **[Video Demo](./acm_ORBITAL.mp4)**
-
-<video src="./acm_ORBITAL.mp4" controls="controls" style="max-width: 100%;">
-  Your browser does not support the video tag.
-</video>
+**[Technical Report (PDF)](docs/Technical%20Report.pdf)** | **[Video Demo](https://drive.google.com/file/d/1s3cf8UkgZwCZqxqejvbClmnB8nkrAw3s/view?usp=drive_link)**
 
 ---
 
