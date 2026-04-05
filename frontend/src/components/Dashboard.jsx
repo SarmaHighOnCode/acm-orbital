@@ -444,21 +444,19 @@ export default function Dashboard() {
             >
               {autoStepEnabled ? 'Pause Auto-Step' : 'Start Auto-Step'}
             </button>
-            {!autoStepEnabled && (
-              <button
-                onClick={manualStep}
-                className="metric-badge"
-                style={{
-                  background: 'rgba(6, 182, 212, 0.06)',
-                  border: '1px solid rgba(6, 182, 212, 0.2)',
-                  color: '#06b6d4',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                +100s Step
-              </button>
-            )}
+            <button
+              onClick={manualStep}
+              className="metric-badge"
+              style={{
+                background: 'rgba(6, 182, 212, 0.06)',
+                border: '1px solid rgba(6, 182, 212, 0.2)',
+                color: '#06b6d4',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              +100s Step
+            </button>
             <button
               onClick={() => setShowMissionReport(true)}
               className="metric-badge"
