@@ -31,22 +31,21 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from config import R_EARTH
+from config import (
+    R_EARTH,
+    KESSLER_SHELL_WIDTH_KM as SHELL_WIDTH_KM,
+    KESSLER_MIN_ALT_KM as MIN_ALT_KM,
+    KESSLER_MAX_ALT_KM as MAX_ALT_KM,
+    KESSLER_AVG_CROSS_SECTION_M2 as AVG_CROSS_SECTION_M2,
+    KESSLER_AVG_REL_VELOCITY_KMS as AVG_REL_VELOCITY_KMS,
+    KESSLER_ASSESSMENT_WINDOW_S as ASSESSMENT_WINDOW_S,
+    KESSLER_NASA_CRITICAL_DENSITY as NASA_CRITICAL_DENSITY,
+)
 
 logger = logging.getLogger("acm.engine.kessler")
 
-# ── Constants ──────────────────────────────────────────────────────────
-SHELL_WIDTH_KM = 50.0           # Altitude band width
-MIN_ALT_KM = 200.0              # Lowest LEO shell
-MAX_ALT_KM = 2000.0             # Highest LEO shell
-AVG_CROSS_SECTION_M2 = 10.0     # Average collision cross-section (satellite ~10 m²)
+# Derived from config
 AVG_CROSS_SECTION_KM2 = AVG_CROSS_SECTION_M2 * 1e-6  # Convert m² → km²
-AVG_REL_VELOCITY_KMS = 10.0     # Average relative velocity in LEO (km/s)
-ASSESSMENT_WINDOW_S = 86400.0   # 24-hour risk window
-
-# NASA stability threshold: spatial density > 1e-8 /km³ triggers concern
-# (from Liou & Johnson 2006, "Risks in Space from Orbiting Debris")
-NASA_CRITICAL_DENSITY = 1.0e-8  # objects/km³
 
 
 @dataclass

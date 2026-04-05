@@ -21,7 +21,7 @@ def _get_engine(request: Request):
     return request.app.state.engine
 
 
-@router.post("/maneuver/schedule", response_model=ManeuverResponse)
+@router.post("/maneuver/schedule", response_model=ManeuverResponse, status_code=202)
 async def schedule_maneuver(
     payload: ManeuverRequest,
     request: Request,

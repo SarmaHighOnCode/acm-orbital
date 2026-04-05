@@ -7,9 +7,9 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - LOG_LEVEL=debug
       - ACM_AUTO_SEED=1
-      - ACM_AUTO_STEP=1
-      - ACM_AUTO_STEP_INTERVAL=0.5
-      - ACM_AUTO_STEP_SIZE=300
+      - ACM_AUTO_STEP=0
+      - ACM_AUTO_STEP_INTERVAL=2
+      - ACM_AUTO_STEP_SIZE=100
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 10s

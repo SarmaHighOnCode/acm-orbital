@@ -38,6 +38,8 @@ from config import (
     SIGNAL_LATENCY_S,
     THRUSTER_COOLDOWN_S,
     MU_EARTH,
+    RTS_TRANSFER_DURATION_S,
+    RECOVERY_TRIGGER_DISTANCE_KM,
 )
 
 logger = logging.getLogger("acm.engine.maneuver")
@@ -320,7 +322,7 @@ class ManeuverPlanner:
                             debris.state_vector, t_check
                         )[:3]
                         sep = float(np.linalg.norm(sat_pos - deb_pos))
-                        if sep > 50.0:
+                        if sep > RECOVERY_TRIGGER_DISTANCE_KM:
                             recovery_base_time = tca + timedelta(seconds=dt_after + 60)
                             break
                     except Exception:
@@ -388,7 +390,7 @@ class ManeuverPlanner:
                 
                 dt_to_burn1_global = (bt1 - current_time).total_seconds()
                 collision_risk = False
-                for dt_fwd in range(60, 5400, 60):
+                for dt_fwd in range(60, int(RTS_TRANSFER_DURATION_S), 60):
                     sat_fwd = self.propagator.propagate(post_burn1_sv, dt_fwd)[:3]
                     deb_fwd = self.propagator.propagate(debris.state_vector, dt_to_burn1_global + dt_fwd)[:3]
                     if float(np.linalg.norm(sat_fwd - deb_fwd)) < 5.0:
@@ -400,7 +402,7 @@ class ManeuverPlanner:
                     final_recovery_time = test_recovery_time
                     break
                 else:
-                    recovery_shift_s += 5400.0
+                    recovery_shift_s += RTS_TRANSFER_DURATION_S
             else:
                 final_rec_burns = rec_burns
                 final_recovery_time = test_recovery_time
@@ -463,8 +465,7 @@ class ManeuverPlanner:
         rho_dot = Q.T @ dv_eci - np.cross(np.array([0.0, 0.0, n]), rho)
         
         # 3. Solve C-W for two-impulse transfer
-        # Transfer duration T (e.g., 5400s ≈ 90 min)
-        T = 5400.0 
+        T = RTS_TRANSFER_DURATION_S
         nt = n * T
         s, c = np.sin(nt), np.cos(nt)
         
@@ -635,7 +636,7 @@ class ManeuverPlanner:
 
         if last_burn_time is not None:
             cooldown_elapsed = (burn_time - last_burn_time).total_seconds()
-            if cooldown_elapsed <= THRUSTER_COOLDOWN_S:
+            if cooldown_elapsed < THRUSTER_COOLDOWN_S:
                 return False, f"Violates {THRUSTER_COOLDOWN_S}s thruster cooldown"
 
         if not has_los:

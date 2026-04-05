@@ -330,7 +330,7 @@ def t10_signal_delay():
         }]
     })
     check("No crash", code != 500, f"got {code}")
-    if code == 200 and isinstance(data, dict):
+    if code in (200, 202) and isinstance(data, dict):
         status = data.get("status", "")
         check("Burn REJECTED", status == "REJECTED", f"got status={status}")
     else:

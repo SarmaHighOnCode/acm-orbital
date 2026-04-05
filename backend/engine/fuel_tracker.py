@@ -105,8 +105,13 @@ class FuelTracker:
             )
         fuel_consumed = self.estimate_fuel_consumption(sat_id, delta_v_ms)
 
-        # Clamp to available propellant — cannot consume more than we have
-        fuel_consumed = min(fuel_consumed, current_fuel)
+        # Reject burn if insufficient propellant — prevents physics divergence
+        if fuel_consumed > current_fuel:
+            logger.warning(
+                "FUEL | %s | Insufficient fuel: need %.3f kg, have %.3f kg — burn rejected",
+                sat_id, fuel_consumed, current_fuel,
+            )
+            return 0.0
         self._fuel[sat_id] = current_fuel - fuel_consumed
 
         logger.info(

@@ -134,7 +134,7 @@ class TestAPIRoundTrip:
                 "deltaV_vector": {"x": 0.001, "y": 0.0, "z": 0.0},
             }]
         })
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert data["status"] == "REJECTED"
 
@@ -152,7 +152,7 @@ class TestAPIRoundTrip:
                 "deltaV_vector": {"x": 0.001, "y": 0.0, "z": 0.0},
             }]
         })
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert data["status"] in ("SCHEDULED", "REJECTED")
         assert "validation" in data

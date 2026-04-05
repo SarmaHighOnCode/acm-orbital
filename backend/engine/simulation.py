@@ -40,6 +40,12 @@ from config import (
     R_EARTH,
     RTOL,
     ATOL,
+    LOOKAHEAD_SECONDS,
+    STATION_KEEPING_PREDICTIVE_THRESHOLD_KM,
+    GRAVEYARD_TARGET_PERIGEE_KM,
+    EOL_GS_SEARCH_WINDOW_S,
+    KESSLER_MIN_ALT_KM,
+    KESSLER_MAX_ALT_KM,
 )
 from engine.models import Satellite, Debris, CDM
 from engine.propagator import OrbitalPropagator
@@ -626,12 +632,19 @@ class SimulationEngine:
 
         if scan_needed:
             sat_states_snapshot = {s.id: s.state_vector for s in self.satellites.values()}
-            # Adaptive lookahead: 4h window up to 50K debris to improve tick rate.
-            # 14400.0 = 4 hours, enough time for CA and Maneuver planning algorithm.
+            # Adaptive lookahead: full 24h window for ≤2K debris (PRD §3.3).
+            # Graceful degradation for larger counts to stay within real-time budget.
             _step_n_deb = len(self.debris)
-            _step_lookahead = 14400.0 if _step_n_deb <= 50000 else (
-                7200.0 if _step_n_deb <= 100000 else 1800.0
-            )
+            if _step_n_deb <= 2000:
+                _step_lookahead = LOOKAHEAD_SECONDS       # 24h — full compliance
+            elif _step_n_deb <= 10000:
+                _step_lookahead = 14400.0                 # 4h — still catches most conjunctions
+            elif _step_n_deb <= 50000:
+                _step_lookahead = 7200.0                  # 2h
+            elif _step_n_deb <= 100000:
+                _step_lookahead = 3600.0                  # 1h
+            else:
+                _step_lookahead = 1800.0                  # 30min — survival mode
             self.active_cdms = self.assessor.assess(
                 sat_states_snapshot,
                 {d.id: d.state_vector for d in self.debris.values()},
@@ -769,7 +782,7 @@ class SimulationEngine:
                 # If drift is approaching the 10 km boundary, fire a micro-
                 # correction BEFORE the satellite leaves the box.  This avoids
                 # logging any Service Outage seconds and keeps Uptime at 100%.
-                if slot_offset > 7.0 and not sat.maneuver_queue and sat.status != "EVADING":
+                if slot_offset > STATION_KEEPING_PREDICTIVE_THRESHOLD_KM and not sat.maneuver_queue and sat.status != "EVADING":
                     rts_burns = self.planner.plan_return_to_slot(
                         satellite=sat,
                         nominal_state=sat.nominal_state,
@@ -789,7 +802,7 @@ class SimulationEngine:
                 sat.status = "RECOVERING"
 
             _, _, alt = _eci_to_lla(sat.position, target_time)
-            if not (200.0 <= alt <= 2000.0):
+            if not (KESSLER_MIN_ALT_KM <= alt <= KESSLER_MAX_ALT_KM):
                 logger.warning(
                     "CONSTRAINTS | %s | Altitude %.1f km outside LEO band",
                     sat.id, alt,
@@ -836,7 +849,7 @@ class SimulationEngine:
                     earliest_burn = target_time + timedelta(
                         seconds=SIGNAL_LATENCY_S + 60
                     )
-                    _EOL_SEARCH_S = 6000
+                    _EOL_SEARCH_S = EOL_GS_SEARCH_WINDOW_S
                     dense_eol = self.propagator.propagate_dense(
                         sat.state_vector, _EOL_SEARCH_S
                     )
@@ -857,7 +870,7 @@ class SimulationEngine:
                         # ΔV ≈ −v_circ × (1 − sqrt(r_target / r_current)) retrograde
                         r_cur = np.linalg.norm(sv_at_burn[:3])
                         v_circ = np.sqrt(MU_EARTH / r_cur)
-                        r_target = 6378.137 + 150.0  # 150 km perigee
+                        r_target = R_EARTH + GRAVEYARD_TARGET_PERIGEE_KM
                         dv_retro_kms = v_circ * (1.0 - np.sqrt(r_target / r_cur))
                         # Cap to remaining fuel capability
                         max_dv_kms = remaining_fuel * ISP * G0 / (

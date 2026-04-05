@@ -339,7 +339,7 @@ class TestAPIErrorHandling:
             "satelliteId": "SAT-EMPTY-SEQ",
             "maneuver_sequence": []
         })
-        assert resp.status_code in (200, 400, 422)
+        assert resp.status_code in (202, 400, 422)
 
     def test_snapshot_before_any_telemetry(self):
         """Snapshot on fresh engine should return valid empty state."""

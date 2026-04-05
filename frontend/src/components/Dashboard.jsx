@@ -19,6 +19,7 @@ import ManeuverTimeline from './ManeuverTimeline';
 import DeltaVChart from './DeltaVChart';
 import KesslerRiskGauge from './KesslerRiskGauge';
 import useStore from '../store';
+import { fetchSnapshot } from '../utils/api';
 
 function ViewToggle({ view, setView }) {
   return (
@@ -331,6 +332,20 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Handle 'i' / 'I' keyboard shortcut for manual step
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger if the user is typing in the search input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        manualStep();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const filteredSats = satSearch.trim()
     ? satellites.filter((s) => s.id.toLowerCase().includes(satSearch.toLowerCase()))
     : satellites;
@@ -370,11 +385,14 @@ export default function Dashboard() {
 
   const manualStep = async () => {
     try {
-      await fetch('/api/simulate/step', {
+      const res = await fetch('/api/simulate/step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ step_seconds: 100.0 })
       });
+      if (res.ok) {
+        await fetchSnapshot();
+      }
     } catch (e) {
       console.error('Failed to manually step', e);
     }
@@ -440,21 +458,19 @@ export default function Dashboard() {
             >
               {autoStepEnabled ? 'Pause Auto-Step' : 'Start Auto-Step'}
             </button>
-            {!autoStepEnabled && (
-              <button
-                onClick={manualStep}
-                className="metric-badge"
-                style={{
-                  background: 'rgba(6, 182, 212, 0.06)',
-                  border: '1px solid rgba(6, 182, 212, 0.2)',
-                  color: '#06b6d4',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                +100s Step
-              </button>
-            )}
+            <button
+              onClick={manualStep}
+              className="metric-badge"
+              style={{
+                background: 'rgba(6, 182, 212, 0.06)',
+                border: '1px solid rgba(6, 182, 212, 0.2)',
+                color: '#06b6d4',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              +100s Step
+            </button>
             <button
               onClick={() => setShowMissionReport(true)}
               className="metric-badge"

@@ -10,7 +10,7 @@ J2-perturbed DOP853 orbital propagation | 4-stage KDTree conjunction assessment 
 [![Three.js](https://img.shields.io/badge/Three.js-WebGL-000000?logo=three.js&logoColor=white)](https://threejs.org)
 [![Docker](https://img.shields.io/badge/Docker-ubuntu:22.04-2496ED?logo=docker&logoColor=white)](https://docker.com)
 
-**[Technical Report (PDF)](docs/Technical%20Report.pdf)** | **[Video Demo](#)** *(link TBD)*
+**[Technical Report (PDF)](docs/Technical%20Report.pdf)** | **[Video Demo](https://drive.google.com/file/d/1s3cf8UkgZwCZqxqejvbClmnB8nkrAw3s/view?usp=drive_link)**
 
 ---
 
@@ -97,7 +97,7 @@ curl -X POST http://localhost:8000/api/maneuver/schedule \
 ```
 
 **Run the Automated Test Suite:**
-To run the 1,165 physics engine tests directly on your machine:
+To run the 1,183 physics engine tests directly on your machine:
 ```bash
 cd backend
 pip install -r requirements.txt
@@ -192,12 +192,12 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 | Aspect | Evidence |
 |---|---|
 | Architecture | 3-layer separation: Physics Engine (pure Python, zero HTTP) &#8594; API Layer (FastAPI + Pydantic) &#8594; Frontend (React + Canvas) |
-| Single source of truth | All 16 physical constants frozen in `backend/config.py` |
+| Single source of truth | All physical constants and tuning parameters frozen in `backend/config.py` |
 | Type safety | Pydantic request/response schemas with strict validation |
-| Test suite | 1,165 pytest-collected tests across 30 files (all passing) |
+| Test suite | 1,183 pytest-collected tests across 30 files (all passing) |
 | Structured logging | `structlog` with JSON output for distributed tracing |
 | No O(N^2) | Architectural invariant enforced across all modules |
-| Configuration | `backend/config.py` imported everywhere, no magic numbers |
+| Configuration | `backend/config.py` imported everywhere — zero hardcoded magic numbers |
 
 ---
 
@@ -225,11 +225,11 @@ Additional: 2D/3D view toggle, click-to-select satellite across all panels, Zust
 
 | Layer | Technology | Lines of Code |
 |---|---|---|
-| Physics Engine | Python 3.11 + NumPy + SciPy | ~3,700 |
-| API Layer | FastAPI + Pydantic + orjson | ~570 |
-| Frontend | React 18 + Canvas + Three.js + Zustand | ~3,560 |
-| Tests | pytest | ~11,300 |
-| **Total** | | **~19,130** |
+| Physics Engine | Python 3.11 + NumPy + SciPy | ~3,300 |
+| API Layer | FastAPI + Pydantic + orjson | ~1,850 |
+| Frontend | React 18 + Canvas + Three.js + Zustand | ~3,650 |
+| Tests | pytest | ~11,370 |
+| **Total** | | **~20,170** |
 
 ---
 
@@ -323,7 +323,7 @@ acm-orbital/
   TESTING.md                    # Detailed testing guide and strategies
   backend/
     main.py                     # FastAPI app + lifespan + auto-step loop
-    config.py                   # 16 physical constants (single source of truth)
+    config.py                   # Physical constants & tuning parameters (single source of truth)
     schemas.py                  # Pydantic API contracts
     api/
       telemetry.py              # POST /api/telemetry
@@ -341,7 +341,7 @@ acm-orbital/
       kessler.py                # Kessler cascade risk scoring
     data/
       ground_stations.csv       # 6 stations (Bengaluru, Svalbard, Goldstone, Punta Arenas, IIT Delhi, McMurdo)
-    tests/                      # 1,165 tests across 30 files
+    tests/                      # 1,183 tests across 30 files
   frontend/
     src/
       App.jsx                   # Root + 2s snapshot polling
@@ -370,7 +370,7 @@ acm-orbital/
 
 See the **[Testing Guide](TESTING.md)** for extensive details on test fixtures, stress profiles, precision benchmarks, and how to write new tests.
 
-**1,165 tests collected | all passing | 30 test files**
+**1,183 tests collected | all passing | 30 test files**
 
 ```bash
 cd backend && python -m pytest tests/ -q
@@ -433,7 +433,7 @@ cd backend && python -m pytest tests/ -q
 | Source code (GitHub) | Complete | This repository |
 | Dockerfile (ubuntu:22.04) | Complete | `./Dockerfile` |
 | Technical Report (PDF) | Complete | [`docs/Technical Report.pdf`](docs/Technical%20Report.pdf) |
-| Video Demo (< 5 min) | Pending | *Link TBD* |
+| Video Demo (< 5 min) | Complete | [Watch Demo](https://drive.google.com/file/d/1s3cf8UkgZwCZqxqejvbClmnB8nkrAw3s/view?usp=drive_link) |
 
 ---
 
