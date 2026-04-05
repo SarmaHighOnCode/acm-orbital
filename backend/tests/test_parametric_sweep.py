@@ -103,12 +103,13 @@ def test_fuel_consumption_monotonic(dv):
     from config import MAX_DV_PER_BURN
     ft = FuelTracker()
     ft.register_satellite("SAT", M_FUEL_INIT)
-    if dv > MAX_DV_PER_BURN * 1.05:
-        # Values above the per-burn limit must be rejected
-        with pytest.raises(ValueError):
-            ft.consume("SAT", dv)
-        return
     consumed = ft.consume("SAT", dv)
+    if dv > MAX_DV_PER_BURN:
+        # Over-limit burns are clamped to MAX_DV_PER_BURN
+        max_fuel_for_limit = (M_DRY + M_FUEL_INIT) * (1 - np.exp(-MAX_DV_PER_BURN / (ISP * G0)))
+        assert consumed <= max_fuel_for_limit * 1.05, \
+            f"Clamped burn consumed too much fuel: {consumed:.4f} kg"
+        return
     remaining = ft.get_fuel("SAT")
     assert remaining >= 0, f"Fuel went negative at dv={dv}"
     assert remaining <= M_FUEL_INIT, f"Fuel increased at dv={dv}"

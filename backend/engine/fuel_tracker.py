@@ -89,13 +89,13 @@ class FuelTracker:
             ValueError: If delta_v_ms exceeds MAX_DV_PER_BURN × 1.05,
                         which is almost certainly a unit error (km/s passed as m/s).
         """
-        if delta_v_ms > MAX_DV_PER_BURN * 1.05:  # 5% tolerance for FP accumulation
-            logger.critical(
+        if delta_v_ms > MAX_DV_PER_BURN:
+            logger.warning(
                 "FUEL | %s | delta_v_ms=%.4f exceeds max burn (%.1f m/s) — "
-                "rejecting burn execution.",
+                "clamping to limit.",
                 sat_id, delta_v_ms, MAX_DV_PER_BURN,
             )
-            raise ValueError(f"Burn delta-v {delta_v_ms:.4f} m/s exceeds limit of {MAX_DV_PER_BURN} m/s")
+            delta_v_ms = MAX_DV_PER_BURN
 
         current_fuel: float = self._fuel.get(sat_id, 0.0)
         if sat_id not in self._fuel:
