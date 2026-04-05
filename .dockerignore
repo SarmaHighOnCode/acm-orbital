@@ -26,3 +26,8 @@ backend/static
 .planning
 .agents
 stress_result.txt
+dist.txt
+output.txt
+pytest_result.txt
+test_out_full.txt
+*.log

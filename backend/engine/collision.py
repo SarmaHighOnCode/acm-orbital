@@ -38,7 +38,8 @@ from config import (
     CA_KDTREE_RADIUS_MAX_KM, CA_KDTREE_RADIUS_MIN_KM,
     CA_MAX_DENSE_DEBRIS, CA_COARSE_GRID_SPACING_S,
     CA_THREATENING_DIST_KM, CA_SAT_VS_SAT_RADIUS_KM,
-    CA_MULTISTART_WINDOW_S,
+    CA_MULTISTART_WINDOW_S, CA_ORBITAL_SHELL_BUFFER_KM,
+    CA_ALTITUDE_SHELL_MARGIN_KM, CA_BRENT_WINDOW_HALF_S,
 )
 from engine.models import CDM
 from engine.propagator import OrbitalPropagator
@@ -115,8 +116,8 @@ class ConjunctionAssessor:
         # threshold within the propagation window → discard before KDTree build.
         sat_states_arr: np.ndarray = np.array(list(sat_states.values()))
         sat_rp, sat_ra = self._compute_apo_peri(sat_states_arr)
-        r_min = float(sat_rp.min()) - 50.0
-        r_max = float(sat_ra.max()) + 50.0
+        r_min = float(sat_rp.min()) - CA_ALTITUDE_SHELL_MARGIN_KM
+        r_max = float(sat_ra.max()) + CA_ALTITUDE_SHELL_MARGIN_KM
 
         deb_states_arr: np.ndarray = np.array(list(debris_states.values()))
         deb_rp, deb_ra = self._compute_apo_peri(deb_states_arr)
@@ -157,8 +158,8 @@ class ConjunctionAssessor:
             # query_ball_point eliminates debris far from initial satellite position
             neighbor_indices = tree.query_ball_point(sat_state[:3], r=kdtree_radius)
             
-            s_rp = sat_rp_dict[sat_id] - 5.0 # buffer for collision threshold
-            s_ra = sat_ra_dict[sat_id] + 5.0
+            s_rp = sat_rp_dict[sat_id] - CA_ORBITAL_SHELL_BUFFER_KM
+            s_ra = sat_ra_dict[sat_id] + CA_ORBITAL_SHELL_BUFFER_KM
             
             for idx in neighbor_indices:
                 deb_id = filtered_ids[idx]
@@ -255,8 +256,8 @@ class ConjunctionAssessor:
                 t_center = grid_points[w_idx]
                 if t_center <= processed_time: continue
                 
-                t_lo = max(0.0, t_center - 600.0)
-                t_hi = min(lookahead_s, t_center + 600.0)
+                t_lo = max(0.0, t_center - CA_BRENT_WINDOW_HALF_S)
+                t_hi = min(lookahead_s, t_center + CA_BRENT_WINDOW_HALF_S)
                 
                 # Brent minimization on the dense polynomial
                 def dist_fn(t, sid=sat_id, did=deb_id):
@@ -267,7 +268,7 @@ class ConjunctionAssessor:
                 res = minimize_scalar(dist_fn, bounds=(t_lo, t_hi), method="bounded")
                 
                 if np.isfinite(res.fun) and res.fun < 5.0:
-                    tca_s = float(res.x)
+                    tca_s = max(0.0, float(res.x))
                     risk = self._classify_risk(res.fun)
                     
                     # Sample state at exact TCA for precise relative velocity
@@ -405,7 +406,7 @@ class ConjunctionAssessor:
                 res = minimize_scalar(dist_fn, bounds=(t_start, t_end), method="bounded")
                 
                 if np.isfinite(res.fun) and res.fun < 5.0:
-                    tca_s = float(res.x)
+                    tca_s = max(0.0, float(res.x))
                     risk = self._classify_risk(res.fun)
                     s1_tca = batch_sol(tca_s)[id_to_idx[s1_id]]
                     s2_tca = batch_sol(tca_s)[id_to_idx[s2_id]]

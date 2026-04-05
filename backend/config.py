@@ -39,6 +39,16 @@ CA_COARSE_GRID_SPACING_S: float = 200.0    # seconds — coarse sweep grid spaci
 CA_THREATENING_DIST_KM: float = 50.0       # km — threshold for Stage-4 TCA refinement
 CA_SAT_VS_SAT_RADIUS_KM: float = 2000.0   # km — KDTree radius for sat-vs-sat checks
 CA_MULTISTART_WINDOW_S: float = 14400.0    # seconds — 4h multi-start Brent window
+CA_ORBITAL_SHELL_BUFFER_KM: float = 5.0    # km — per-pair orbital shell altitude buffer
+CA_ALTITUDE_SHELL_MARGIN_KM: float = 50.0  # km — Stage 1 altitude band margin
+CA_BRENT_WINDOW_HALF_S: float = 600.0      # seconds — ±10 min TCA refinement half-window
+
+# ── Maneuver Planner Tuning ─────────────────────────────────────────────
+RTS_TRANSFER_DURATION_S: float = 5400.0    # seconds — return-to-slot CW transfer (~90 min)
+RECOVERY_TRIGGER_DISTANCE_KM: float = 50.0 # km — min debris separation to start recovery
+STATION_KEEPING_PREDICTIVE_THRESHOLD_KM: float = 7.0  # km — predictive SK correction trigger
+GRAVEYARD_TARGET_PERIGEE_KM: float = 150.0 # km — EOL deorbit perigee target
+EOL_GS_SEARCH_WINDOW_S: float = 6000.0     # seconds — EOL ground station opportunity window
 
 # ── Kessler Risk Assessment ─────────────────────────────────────────────
 KESSLER_SHELL_WIDTH_KM: float = 50.0       # km — altitude band width per shell

@@ -100,8 +100,14 @@ DV_VALUES = [0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 12.0, 14.9, 15
 @pytest.mark.parametrize("dv", DV_VALUES)
 def test_fuel_consumption_monotonic(dv):
     """Higher dv ({dv} m/s) should consume more fuel."""
+    from config import MAX_DV_PER_BURN
     ft = FuelTracker()
     ft.register_satellite("SAT", M_FUEL_INIT)
+    if dv > MAX_DV_PER_BURN * 1.05:
+        # Values above the per-burn limit must be rejected
+        with pytest.raises(ValueError):
+            ft.consume("SAT", dv)
+        return
     consumed = ft.consume("SAT", dv)
     remaining = ft.get_fuel("SAT")
     assert remaining >= 0, f"Fuel went negative at dv={dv}"
