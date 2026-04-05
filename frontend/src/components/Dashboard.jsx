@@ -19,6 +19,7 @@ import ManeuverTimeline from './ManeuverTimeline';
 import DeltaVChart from './DeltaVChart';
 import KesslerRiskGauge from './KesslerRiskGauge';
 import useStore from '../store';
+import { fetchSnapshot } from '../utils/api';
 
 function ViewToggle({ view, setView }) {
   return (
@@ -370,11 +371,14 @@ export default function Dashboard() {
 
   const manualStep = async () => {
     try {
-      await fetch('/api/simulate/step', {
+      const res = await fetch('/api/simulate/step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ step_seconds: 100.0 })
       });
+      if (res.ok) {
+        await fetchSnapshot();
+      }
     } catch (e) {
       console.error('Failed to manually step', e);
     }
