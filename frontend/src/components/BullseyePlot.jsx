@@ -92,6 +92,7 @@ export default function BullseyePlot() {
       const cx = w / 2;
       const cy = h / 2;
       const maxR = Math.min(w, h) / 2 - 20;
+      if (maxR <= 0) return; // canvas not yet laid out — ctx.arc() throws on negative radius
 
       // Background
       ctx.fillStyle = '#0d1117';
@@ -238,7 +239,7 @@ export default function BullseyePlot() {
         ctx.fillStyle = '#6b7280';
         ctx.font = '8px Inter, monospace';
         ctx.fillText(
-          `${focusSatData.status} \u00b7 ${focusSatData.fuel_kg.toFixed(1)} kg \u00b7 ${relevantCdms.length} CDMs`,
+          `${focusSatData.status} \u00b7 ${(focusSatData.fuel_kg ?? 0).toFixed(1)} kg \u00b7 ${relevantCdms.length} CDMs`,
           cx,
           cy + maxR + 32
         );
