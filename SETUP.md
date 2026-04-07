@@ -8,7 +8,7 @@
 
 ## Option 1: Quick Start (Docker - Recommended)
 
-The engine automatically seeds **50 satellites + 10,000 debris objects** and advances the clock by 5 steps on first load so the dashboard is fully populated immediately.
+The engine can seed **50 satellites + 10,000 debris objects** when pressed auto-step.
 
 ```bash
 git clone https://github.com/SarmaHighOnCode/acm-orbital.git
