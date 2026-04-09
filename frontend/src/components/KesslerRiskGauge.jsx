@@ -16,6 +16,7 @@
 
 import React, { useEffect, useRef, useCallback } from 'react';
 import useStore from '../store';
+import { API_BASE } from '../utils/api';
 
 const RISK_COLORS = {
   LOW: '#00ff88',
@@ -35,7 +36,7 @@ export default function KesslerRiskGauge() {
   useEffect(() => {
     let cancelled = false;
     const fetchData = () => {
-      fetch('/api/kessler-risk')
+      fetch(`${API_BASE}/kessler-risk`)
         .then((r) => r.ok ? r.json() : null)
         .then((d) => { if (!cancelled && d) setKesslerData(d); })
         .catch(() => {});

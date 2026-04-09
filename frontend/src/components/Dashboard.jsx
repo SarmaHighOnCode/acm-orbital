@@ -19,7 +19,7 @@ import ManeuverTimeline from './ManeuverTimeline';
 import DeltaVChart from './DeltaVChart';
 import KesslerRiskGauge from './KesslerRiskGauge';
 import useStore from '../store';
-import { fetchSnapshot } from '../utils/api';
+import { fetchSnapshot, API_BASE } from '../utils/api';
 
 function ViewToggle({ view, setView }) {
   return (
@@ -89,7 +89,7 @@ function PhysicsProofModal({ onClose }) {
 
   React.useEffect(() => {
     let cancelled = false;
-    fetch('/api/physics-proof')
+    fetch(`${API_BASE}/physics-proof`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -206,7 +206,7 @@ function MissionReportModal({ onClose }) {
 
   React.useEffect(() => {
     let cancelled = false;
-    fetch('/api/mission-report')
+    fetch(`${API_BASE}/mission-report`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (!cancelled) { setData(d); setLoading(false); } })
       .catch(() => { if (!cancelled) setLoading(false); });
@@ -370,7 +370,7 @@ export default function Dashboard() {
   const toggleAutoStep = async () => {
     try {
       const newVal = !autoStepEnabled;
-      const res = await fetch('/api/simulate/autostep', {
+      const res = await fetch(`${API_BASE}/simulate/autostep`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: newVal })
@@ -385,7 +385,7 @@ export default function Dashboard() {
 
   const manualStep = async () => {
     try {
-      const res = await fetch('/api/simulate/step', {
+      const res = await fetch(`${API_BASE}/simulate/step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ step_seconds: 100.0 })

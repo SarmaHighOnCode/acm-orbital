@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: acm-orbital-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --log-level info
+    envVars:
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: ACM_AUTO_SEED
+        value: "1"
+      - key: ACM_AUTO_STEP
+        value: "1"
+      - key: ACM_AUTO_STEP_INTERVAL
+        value: "2"
+      - key: ACM_AUTO_STEP_SIZE
+        value: "100"
+      - key: ACM_NO_STATIC
+        value: "1"
+    healthCheckPath: /health

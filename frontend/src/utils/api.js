@@ -13,7 +13,7 @@
 
 import useStore from '../store';
 
-const API_BASE = '/api';
+export const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
 
