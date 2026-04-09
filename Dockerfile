@@ -38,7 +38,8 @@ COPY frontend/ /app/frontend/
 RUN cd /app/frontend && npm run build \
     && rm -rf /app/backend/static \
     && mkdir -p /app/backend/static \
-    && cp -r dist/* /app/backend/static/
+    && cp -r dist/* /app/backend/static/ \
+    && rm -rf /app/frontend/node_modules /app/frontend/.vite
 
 # ── Phase 4: Runtime Configuration ────────────────────────────────────────
 EXPOSE 8000

@@ -1,3 +1,13 @@
+---
+title: ACM Orbital
+emoji: 🛰️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # ACM-Orbital — Autonomous Constellation Manager
 
 **Real-time collision avoidance for 50 satellites navigating 10,000+ debris objects in Low Earth Orbit.**
