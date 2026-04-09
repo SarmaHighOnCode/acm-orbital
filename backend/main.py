@@ -84,12 +84,17 @@ def _auto_seed(eng: SimulationEngine) -> None:
 
     from generate_telemetry import build_telemetry_payload
 
-    logger.info("AUTO_SEED | Generating 50 satellites + 10,000 debris (LEO mode)...")
+    # Scale down for resource-constrained environments (Render free = 0.1 CPU)
+    is_constrained = os.environ.get("RENDER", "") != "" or os.environ.get("ACM_LITE", "0") == "1"
+    n_sats = 20 if is_constrained else 50
+    n_deb = 2_000 if is_constrained else 10_000
+
+    logger.info("AUTO_SEED | Generating %d satellites + %d debris (LEO mode)...", n_sats, n_deb)
     t0 = time.perf_counter()
 
     payload = build_telemetry_payload(
-        n_satellites=50,
-        n_debris=10_000,
+        n_satellites=n_sats,
+        n_debris=n_deb,
         mode="leo",
         seed=42,
         timestamp="2026-03-12T08:00:00.000Z",
@@ -352,16 +357,20 @@ async def lifespan(app: FastAPI):
     app.state.engine = engine
     app.state.engine_lock = engine_lock
 
-    # Auto-seed in a thread so we don't block the event loop
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _auto_seed, engine)
-
     # Auto-step: disabled by default (README contract). Set ACM_AUTO_STEP=1 to enable.
     engine.auto_step_enabled = os.environ.get("ACM_AUTO_STEP", "0") == "1"
+
+    # Start server FIRST (yield), then seed in background so health checks pass immediately
+    async def _background_seed():
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _auto_seed, engine)
+
+    seed_task = asyncio.create_task(_background_seed())
     auto_step_task = asyncio.create_task(_auto_step_loop(engine, engine_lock))
     curve_task = asyncio.create_task(_safety_curving_loop(engine, engine_lock))
 
     yield
+    seed_task.cancel()
     auto_step_task.cancel()
     curve_task.cancel()
     logger.info("ACM-Orbital shutting down")
