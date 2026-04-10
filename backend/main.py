@@ -63,6 +63,16 @@ logger = structlog.get_logger("acm")
 engine: SimulationEngine | None = None
 engine_lock = asyncio.Lock()
 
+# Inactivity reset: reset simulation to initial state after this many seconds
+# of no API activity (default 10 minutes). Set ACM_INACTIVITY_RESET_S=0 to disable.
+INACTIVITY_RESET_S = int(os.environ.get("ACM_INACTIVITY_RESET_S", str(10 * 60)))
+_last_activity: float = time.time()
+
+
+def _touch_activity() -> None:
+    global _last_activity
+    _last_activity = time.time()
+
 
 def get_engine() -> SimulationEngine:
     """Dependency: returns the global SimulationEngine instance."""
@@ -320,6 +330,33 @@ async def _safety_curving_loop(eng: SimulationEngine, lock: asyncio.Lock):
                 eng._injected_curve_threats += batch_size
 
 
+async def _inactivity_reset_loop(lock: asyncio.Lock) -> None:
+    """Reset simulation to fresh seeded state after INACTIVITY_RESET_S of no API calls.
+
+    This ensures every new visitor sees the simulation from the beginning rather
+    than joining a stale run that was triggered by a previous user.
+    """
+    if INACTIVITY_RESET_S <= 0:
+        return
+    logger.info("INACTIVITY | Watcher started — reset after %ds idle", INACTIVITY_RESET_S)
+    while True:
+        await asyncio.sleep(30)
+        if engine is None:
+            continue
+        idle = time.time() - _last_activity
+        if idle < INACTIVITY_RESET_S:
+            continue
+        logger.info("INACTIVITY | %.0f s idle — resetting simulation for next visitor", idle)
+        async with lock:
+            engine.auto_step_enabled = False
+            engine.reset()
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, _auto_seed, engine)
+            engine.auto_step_enabled = False
+        _touch_activity()  # Prevent immediate re-trigger
+        logger.info("INACTIVITY | Reset complete — engine fresh")
+
+
 async def _auto_step_loop(eng: SimulationEngine, lock: asyncio.Lock):
     """Background task: advance the simulation by 100s every 2s so the dashboard
     shows continuous orbital motion and trails build up in real-time."""
@@ -360,10 +397,12 @@ async def lifespan(app: FastAPI):
     engine.auto_step_enabled = os.environ.get("ACM_AUTO_STEP", "0") == "1"
     auto_step_task = asyncio.create_task(_auto_step_loop(engine, engine_lock))
     curve_task = asyncio.create_task(_safety_curving_loop(engine, engine_lock))
+    inactivity_task = asyncio.create_task(_inactivity_reset_loop(engine_lock))
 
     yield
     auto_step_task.cancel()
     curve_task.cancel()
+    inactivity_task.cancel()
     logger.info("ACM-Orbital shutting down")
     engine = None
 
@@ -397,6 +436,17 @@ class NoCacheHTMLMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class ActivityTrackingMiddleware(BaseHTTPMiddleware):
+    """Track last API activity time so the inactivity reset loop knows when to reset."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/api") and "health" not in path:
+            _touch_activity()
+        return await call_next(request)
+
+
+app.add_middleware(ActivityTrackingMiddleware)
 app.add_middleware(NoCacheHTMLMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
